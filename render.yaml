@@ -21,6 +21,8 @@ services:
         value: Hagale.Demo
       - key: Jwt__Audience
         value: Hagale.Demo
+      - key: Jwt__AccessTokenLifetimeMinutes
+        value: "60"
       - key: Jwt__SigningKey
         generateValue: true
       - key: DocumentStorage__RootPath

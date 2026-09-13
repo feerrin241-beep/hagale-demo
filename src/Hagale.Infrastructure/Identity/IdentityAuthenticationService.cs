@@ -3,6 +3,8 @@ using Hagale.Application.Common;
 using Hagale.Infrastructure.Authentication;
 using Google.Apis.Auth;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Hagale.Infrastructure.Identity;
@@ -11,7 +13,9 @@ public sealed class IdentityAuthenticationService(
     UserManager<AppUser> userManager,
     IJwtTokenService tokenService,
     IOptions<GoogleAuthenticationOptions> googleOptions,
-    TimeProvider timeProvider) : IAuthenticationService
+    TimeProvider timeProvider,
+    ILogger<IdentityAuthenticationService> logger,
+    IHostEnvironment hostEnvironment) : IAuthenticationService
 {
     private const string GoogleLoginProvider = "Google";
 
@@ -32,20 +36,42 @@ public sealed class IdentityAuthenticationService(
             LockoutEnabled = true
         };
 
-        var createResult = await userManager.CreateAsync(user, command.Password);
-        if (!createResult.Succeeded)
+        try
         {
-            return ApplicationResult<AuthenticatedUserDto>.Failure("No fue posible crear la cuenta. Revisa los datos y los requisitos de contraseña.");
-        }
+            var createResult = await userManager.CreateAsync(user, command.Password);
+            if (!createResult.Succeeded)
+            {
+                return ApplicationResult<AuthenticatedUserDto>.Failure(BuildIdentityErrorMessage(
+                    createResult,
+                    "No fue posible crear la cuenta."));
+            }
 
-        var roleResult = await userManager.AddToRoleAsync(user, HagaleRoles.Customer);
-        if (!roleResult.Succeeded)
+            var roleResult = await userManager.AddToRoleAsync(user, HagaleRoles.Customer);
+            if (!roleResult.Succeeded)
+            {
+                await userManager.DeleteAsync(user);
+                return ApplicationResult<AuthenticatedUserDto>.Failure(BuildIdentityErrorMessage(
+                    roleResult,
+                    "No fue posible preparar la cuenta."));
+            }
+
+            try
+            {
+                return ApplicationResult<AuthenticatedUserDto>.Success(
+                    await CreateAuthenticatedUserAsync(user, cancellationToken));
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "No fue posible emitir la sesión después de registrar al usuario {Email}.", user.Email);
+                await userManager.DeleteAsync(user);
+                return ApplicationResult<AuthenticatedUserDto>.Failure(BuildRegistrationExceptionMessage(exception));
+            }
+        }
+        catch (Exception exception)
         {
-            await userManager.DeleteAsync(user);
-            return ApplicationResult<AuthenticatedUserDto>.Failure("No fue posible preparar la cuenta. Inténtalo nuevamente.");
+            logger.LogError(exception, "Error inesperado durante el registro de {Email}.", user.Email);
+            return ApplicationResult<AuthenticatedUserDto>.Failure(BuildRegistrationExceptionMessage(exception));
         }
-
-        return ApplicationResult<AuthenticatedUserDto>.Success(await CreateAuthenticatedUserAsync(user, cancellationToken));
     }
 
     public async Task<ApplicationResult<AuthenticatedUserDto>> LoginAsync(LoginCommand command, CancellationToken cancellationToken = default)
@@ -232,5 +258,39 @@ public sealed class IdentityAuthenticationService(
         }
 
         return normalized.Length > 100 ? normalized[..100] : normalized;
+    }
+
+    private string BuildRegistrationExceptionMessage(Exception exception)
+    {
+        if (hostEnvironment.IsEnvironment("Demo"))
+        {
+            // La demo necesita mostrar una causa accionable para poder corregir
+            // la configuración del servicio gratuito sin exponerla en producción.
+            return $"No fue posible completar el registro de la demo. Detalle técnico: {exception.GetBaseException().Message}";
+        }
+
+        return "No fue posible completar el registro. Inténtalo nuevamente.";
+    }
+
+    private static string BuildIdentityErrorMessage(IdentityResult result, string fallback)
+    {
+        var messages = result.Errors
+            .Select(error => error.Code switch
+            {
+                "PasswordTooShort" => "la contraseña debe tener mínimo 12 caracteres",
+                "PasswordRequiresUpper" => "la contraseña debe incluir una mayúscula",
+                "PasswordRequiresLower" => "la contraseña debe incluir una minúscula",
+                "PasswordRequiresDigit" => "la contraseña debe incluir un número",
+                "PasswordRequiresNonAlphanumeric" => "la contraseña debe incluir un símbolo",
+                "DuplicateUserName" or "DuplicateEmail" => "ese correo ya está registrado",
+                _ => error.Description
+            })
+            .Where(message => !string.IsNullOrWhiteSpace(message))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return messages.Length == 0
+            ? fallback
+            : $"{fallback} Revisa: {string.Join("; ", messages)}.";
     }
 }

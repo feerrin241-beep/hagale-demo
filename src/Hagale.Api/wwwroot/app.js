@@ -2251,6 +2251,20 @@ async function handleLogin(event) {
 async function handleRegister(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const password = String(form.get("password") || "");
+  const passwordErrors = [];
+  if (password.length < 12) passwordErrors.push("mínimo 12 caracteres");
+  if (!/[A-ZÁÉÍÓÚÜÑ]/.test(password)) passwordErrors.push("una mayúscula");
+  if (!/[a-záéíóúüñ]/.test(password)) passwordErrors.push("una minúscula");
+  if (!/\d/.test(password)) passwordErrors.push("un número");
+  if (!/[^\p{L}\p{N}\s]/u.test(password)) passwordErrors.push("un símbolo");
+
+  if (passwordErrors.length > 0) {
+    showNotice(`La contraseña necesita: ${passwordErrors.join(", ")}.`, true);
+    document.querySelector("#password")?.focus();
+    return;
+  }
+
   await authenticate("/auth/register", Object.fromEntries(form));
 }
 
