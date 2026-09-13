@@ -2451,34 +2451,46 @@ body.welcome-view {
 }
 
 .google-auth-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .65rem;
   width: 100%;
   min-height: 3.05rem;
-  border: 1px solid #c9c9c2;
+  border: 1px solid #d8d8d1;
+  border-radius: .8rem;
   color: #111218;
-  background: #fff;
+  background: linear-gradient(180deg, #fff, #f5f5f2);
   font-weight: 900;
+  letter-spacing: -.01em;
+  box-shadow: 0 .55rem 1.2rem rgba(18, 19, 26, .08);
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
 }
 
 .google-auth-button:hover {
-  border-color: #111218;
-  background: #fff7ca;
+  border-color: #ffd800;
+  background: #fff;
+  box-shadow: 0 .75rem 1.6rem rgba(18, 19, 26, .12);
+  transform: translateY(-1px);
 }
 
 .google-auth-button[aria-disabled="true"] {
-  cursor: not-allowed;
+  opacity: .78;
 }
 
 .google-auth-mark {
-  display: inline-grid;
+  display: grid;
   place-items: center;
-  width: 1.65rem;
-  height: 1.65rem;
-  margin-right: .45rem;
-  border: 1px solid #d9d9d2;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid #e5e5e0;
   border-radius: 50%;
-  color: #1a73e8;
   background: #fff;
-  font-weight: 950;
+}
+
+.google-auth-icon {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 .google-official-button,
@@ -3737,12 +3749,13 @@ body.welcome-view {
 .welcome-auth-card .google-auth-button {
   border-color: rgba(255,255,255,.45);
   color: #111218;
-  background: #fff;
+  background: linear-gradient(180deg, #fff, #f3f3ef);
+  box-shadow: 0 .75rem 1.55rem rgba(0,0,0,.28);
 }
 
 .welcome-auth-card .google-auth-button:hover {
   border-color: #ffd800;
-  background: #fff8c9;
+  background: #fff;
 }
 
 .welcome-auth-card .button-primary {

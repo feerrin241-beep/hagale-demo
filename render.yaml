@@ -28,4 +28,4 @@ services:
       - key: DocumentStorage__RootPath
         value: /tmp/hagale-demo-private-documents
       - key: Authentication__Google__ClientId
-        value: ""
+        sync: false
