@@ -28,6 +28,8 @@ Esta demo gratuita no es producción comercial:
 - `Dockerfile`: empaqueta HÁGALE.
 - `src/Hagale.Api/appsettings.Demo.json`: activa modo demo con base de datos temporal en memoria.
 - `scripts/run-demo.ps1`: permite probar ese mismo modo demo en el PC, sin LocalDB.
+- `artifacts/hagale-source-render-20260913.zip`: copia limpia del código fuente,
+  lista para cargar en un repositorio GitHub si no se usa Git desde la terminal.
 
 ## Probar el modo demo en el PC antes de publicarlo
 

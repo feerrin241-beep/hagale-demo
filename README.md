@@ -61,6 +61,7 @@ Mientras esté en local, el enlace del celular `http://192.168.1.53:5171/` solo 
 La publicación elegida para producción usará el dominio con tilde `hágale.shop`. El dominio ya está comprado, pero todavía apunta al parking de Hostinger; no se debe cambiar el DNS hasta tener la IP pública del servidor. El orden y los valores están documentados en [DEPLOYMENT-HAGALE-SHOP.md](DEPLOYMENT-HAGALE-SHOP.md). La lista ejecutiva está en [PRODUCCION-HAGALE-CHECKLIST.md](PRODUCCION-HAGALE-CHECKLIST.md). También queda generado el paquete Release actualizado `artifacts/hagale-publish-final-20260913.zip`.
 
 Si todavía no hay presupuesto para servidor, existe una ruta temporal para verla sin el computador encendido: [DEMO-GRATIS-RENDER.md](DEMO-GRATIS-RENDER.md). Esa demo usa `render.yaml` y `appsettings.Demo.json`; sirve para mostrar y probar, no para operar comercialmente.
+Para facilitar la carga manual también queda `artifacts/hagale-source-render-20260913.zip`, un paquete de código fuente sin publicaciones compiladas ni documentos privados.
 
 ## Ruta para convertirla en app
 
