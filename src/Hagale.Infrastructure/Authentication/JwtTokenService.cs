@@ -37,7 +37,7 @@ public sealed class JwtTokenService(
 
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration.SigningKey)),
-            SecurityAlgorithms.HmacSha512);
+            SecurityAlgorithms.HmacSha256);
 
         var token = new JwtSecurityToken(
             configuration.Issuer,
