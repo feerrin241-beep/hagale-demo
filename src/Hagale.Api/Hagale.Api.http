@@ -1,0 +1,11 @@
+@Hagale.Api_HostAddress = http://localhost:5171
+
+GET {{Hagale.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+GET {{Hagale.Api_HostAddress}}/
+Accept: text/html
+
+###

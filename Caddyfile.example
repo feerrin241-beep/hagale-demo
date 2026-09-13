@@ -1,0 +1,7 @@
+# Caddy puede generar HTTPS automático con Let's Encrypt.
+# Para el dominio con tilde usamos la forma técnica IDN/Punycode.
+
+xn--hgale-xqa.shop, www.xn--hgale-xqa.shop {
+    encode gzip
+    reverse_proxy 127.0.0.1:8080
+}

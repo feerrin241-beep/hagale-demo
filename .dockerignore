@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+.git/
+.vs/
+.idea/
+artifacts/
+work/
+src/Hagale.Api/App_Data/
+*.user
+*.suo
+
+# Nunca enviar secretos al contexto Docker.
+.env
+.env.*
+!*.example

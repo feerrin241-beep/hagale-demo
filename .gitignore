@@ -1,0 +1,22 @@
+# Build outputs
+bin/
+obj/
+
+# IDE and local tooling
+.vs/
+.idea/
+*.user
+
+# Local-only private document storage
+src/Hagale.Api/App_Data/
+
+# Intermediate verification files
+work/
+.codex-tmp/
+outputs/
+artifacts/
+
+# Environment files and material that may contain secrets
+.env
+.env.*
+!*.example

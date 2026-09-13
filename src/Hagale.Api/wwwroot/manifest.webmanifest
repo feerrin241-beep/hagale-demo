@@ -1,0 +1,56 @@
+{
+  "name": "HÁGALE",
+  "short_name": "HÁGALE",
+  "description": "Movilidad en moto clara, rápida y segura para clientes y conductores.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#FFD700",
+  "categories": ["navigation", "travel", "business"],
+  "lang": "es-CO",
+  "icons": [
+    {
+      "src": "/assets/hagale-app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/hagale-app-icon-yellow-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/assets/hagale-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/hagale-icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Pedir moto",
+      "short_name": "Pedir",
+      "description": "Abrir el panel de cliente para solicitar una moto.",
+      "url": "/?panel=ride",
+      "icons": [{ "src": "/assets/hagale-app-icon-512.png", "sizes": "512x512", "type": "image/png" }]
+    },
+    {
+      "name": "Panel conductor",
+      "short_name": "Conductor",
+      "description": "Abrir HÁGALE para revisar solicitudes como conductor.",
+      "url": "/?mode=driver",
+      "icons": [{ "src": "/assets/hagale-app-icon-512.png", "sizes": "512x512", "type": "image/png" }]
+    }
+  ]
+}

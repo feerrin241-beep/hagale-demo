@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: hagale-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Demo
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      - key: ASPNETCORE_FORWARDEDHEADERS_ENABLED
+        value: "true"
+      - key: Database__Provider
+        value: InMemory
+      - key: ConnectionStrings__HagaleDatabase
+        value: HagaleDemo
+      - key: Jwt__Issuer
+        value: Hagale.Demo
+      - key: Jwt__Audience
+        value: Hagale.Demo
+      - key: Jwt__SigningKey
+        generateValue: true
+      - key: DocumentStorage__RootPath
+        value: /tmp/hagale-demo-private-documents
+      - key: Authentication__Google__ClientId
+        value: ""

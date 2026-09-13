@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">HÁGALE maskable</title>
+  <desc id="desc">Icono adaptable negro y amarillo de HÁGALE.</desc>
+  <rect width="512" height="512" fill="#050506"/>
+  <circle cx="394" cy="256" r="86" fill="#FFD700"/>
+  <path d="M356 256h84m-36-40 40 40-40 40" fill="none" stroke="#050506" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M70 130h70v92h92v-92h70v252h-70V282h-92v100H70V130Z" fill="#FFD700"/>
+  <path d="M186 88h68l-44 28h-54l30-28Z" fill="#FFFFFF"/>
+  <path d="M318 388c-16 0-29-13-29-29s13-29 29-29 29 13 29 29-13 29-29 29Z" fill="#FFFFFF" opacity=".95"/>
+</svg>

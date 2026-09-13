@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">HÁGALE</title>
+  <desc id="desc">Icono cuadrado negro y amarillo de HÁGALE.</desc>
+  <rect width="512" height="512" rx="112" fill="#050506"/>
+  <circle cx="380" cy="256" r="76" fill="#FFD700"/>
+  <path d="M346 256h72m-31-34 34 34-34 34" fill="none" stroke="#050506" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M92 148h58v82h86v-82h58v216h-58v-86h-86v86H92V148Z" fill="#FFD700"/>
+  <path d="M192 116h55l-36 24h-44l25-24Z" fill="#FFFFFF"/>
+  <path d="M316 363c-12 0-22-10-22-22s10-22 22-22 22 10 22 22-10 22-22 22Z" fill="#FFFFFF" opacity=".95"/>
+</svg>

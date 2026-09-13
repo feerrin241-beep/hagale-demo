@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es-CO">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffd800">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="HÁGALE">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="HÁGALE, plataforma web de movilidad en moto para clientes, conductores y administración.">
+  <title>HÁGALE · movilidad clara y segura</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/assets/hagale-app-icon-512.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/hagale-app-icon-512.png">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/app.css?v=20260911-21">
+</head>
+<body>
+  <a class="skip-link" href="#app">Ir al contenido</a>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="HÁGALE, inicio">
+      <img class="hagale-logo-image site-brand-logo" src="/assets/hagale-logo-yellow.png" alt="HÁGALE">
+    </a>
+    <span class="header-note">Movilidad urbana, clara y segura</span>
+  </header>
+
+  <main id="app" tabindex="-1"></main>
+  <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+  <script src="/vendor/leaflet/leaflet.js" defer></script>
+  <!-- Cliente oficial de SignalR incluido localmente para funcionar también en la red del teléfono. -->
+  <script src="/vendor/signalr/signalr.min.js" defer></script>
+  <script src="/app.js?v=20260911-21" defer></script>
+</body>
+</html>

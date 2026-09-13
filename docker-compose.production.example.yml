@@ -1,0 +1,54 @@
+name: hagale
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Express"
+      MSSQL_SA_PASSWORD: "${HAGALE_SQL_SA_PASSWORD}"
+    volumes:
+      - hagale-sqlserver-data:/var/opt/mssql
+
+  hagale-migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrations
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      HAGALE_MIGRATIONS_CONNECTION_STRING: "Server=sqlserver,1433;Database=HagaleProduction;User Id=sa;Password=${HAGALE_SQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;"
+    depends_on:
+      - sqlserver
+    profiles:
+      - tools
+
+  hagale-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      AllowedHosts: "hágale.shop;xn--hgale-xqa.shop;www.hágale.shop;www.xn--hgale-xqa.shop"
+      ConnectionStrings__HagaleDatabase: "Server=sqlserver,1433;Database=HagaleProduction;User Id=sa;Password=${HAGALE_SQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True;MultipleActiveResultSets=True;"
+      Jwt__Issuer: "https://xn--hgale-xqa.shop"
+      Jwt__Audience: "Hagale.Mobile"
+      Jwt__SigningKey: "${HAGALE_JWT_SIGNING_KEY}"
+      Authentication__Google__ClientId: "${HAGALE_GOOGLE_CLIENT_ID}"
+      DocumentStorage__RootPath: "/app/App_Data/private-documents"
+    volumes:
+      - hagale-private-documents:/app/App_Data/private-documents
+    ports:
+      # El proxy HTTPS del servidor debe entrar por este puerto local.
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - sqlserver
+
+volumes:
+  hagale-sqlserver-data:
+  hagale-private-documents:
