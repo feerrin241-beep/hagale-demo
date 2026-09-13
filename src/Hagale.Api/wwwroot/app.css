@@ -2305,6 +2305,77 @@ body.welcome-view {
   padding: .5rem .65rem;
 }
 
+.password-control {
+  position: relative;
+  display: grid;
+}
+
+#auth-form .password-control input {
+  padding-right: 3rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: .42rem;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border: 1px solid #d8d8d1;
+  border-radius: 999px;
+  color: #111218;
+  background: #fffdf3;
+  transition: transform .18s ease, color .18s ease, background .18s ease, border-color .18s ease;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover {
+  border-color: #ffd800;
+  background: #ffd800;
+  transform: translateY(-50%) scale(1.05);
+}
+
+.password-toggle:active {
+  transform: translateY(-50%) scale(.96);
+}
+
+.password-eye-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.85;
+}
+
+.password-eye-slash {
+  stroke-width: 2.2;
+}
+
+.forgot-password-link {
+  justify-self: start;
+  width: auto;
+  min-height: auto;
+  padding: .08rem .05rem 0;
+  border: 0;
+  color: #4b4e57;
+  background: transparent;
+  font-size: .78rem;
+  font-weight: 850;
+  line-height: 1.25;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: .18rem;
+  transition: color .18s ease, transform .18s ease;
+}
+
+.forgot-password-link:hover {
+  color: #111218;
+  transform: translateX(2px);
+}
+
 #auth-form .form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: .6rem;
@@ -3527,6 +3598,19 @@ body.welcome-view {
     padding: .35rem .5rem;
   }
 
+  body.welcome-view #auth-form .password-control input {
+    padding-right: 2.75rem;
+  }
+
+  body.welcome-view #auth-form .password-toggle {
+    width: 1.9rem;
+    height: 1.9rem;
+  }
+
+  body.welcome-view #auth-form .forgot-password-link {
+    font-size: .7rem;
+  }
+
   body.welcome-view #auth-form .button-primary,
   body.welcome-view #auth-form .google-auth-button {
     min-height: 2.7rem;
@@ -3620,6 +3704,25 @@ body.welcome-view {
   border-color: #ffd800;
   outline-color: #ffd800;
   background: #111218;
+}
+
+.welcome-auth-card .password-toggle {
+  border-color: rgba(255,216,0,.72);
+  color: #ffd800;
+  background: #050506;
+}
+
+.welcome-auth-card .password-toggle:hover {
+  color: #111218;
+  background: #ffd800;
+}
+
+.welcome-auth-card .forgot-password-link {
+  color: #ffd800;
+}
+
+.welcome-auth-card .forgot-password-link:hover {
+  color: #fff;
 }
 
 .welcome-auth-card .auth-divider {

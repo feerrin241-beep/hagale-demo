@@ -2203,6 +2203,44 @@ async function handleGoogleCredentialResponse(response) {
   await authenticate("/auth/google", { credential: response.credential });
 }
 
+function renderPasswordIcon(isVisible = false) {
+  return `
+    <svg class="password-eye-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+      <circle cx="12" cy="12" r="2.7"></circle>
+      ${isVisible ? '<path class="password-eye-slash" d="M4 4l16 16"></path>' : ""}
+    </svg>`;
+}
+
+function bindAuthUtilities() {
+  document.querySelectorAll("[data-toggle-password]").forEach(button => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.togglePassword;
+      const input = target ? document.querySelector(target) : null;
+      if (!input) return;
+
+      const willShow = input.type === "password";
+      input.type = willShow ? "text" : "password";
+      button.setAttribute("aria-label", willShow ? "Ocultar contraseña" : "Mostrar contraseña");
+      button.setAttribute("aria-pressed", String(willShow));
+      button.title = willShow ? "Ocultar contraseña" : "Mostrar contraseña";
+      button.innerHTML = renderPasswordIcon(willShow);
+    });
+  });
+
+  document.querySelectorAll("[data-forgot-password]").forEach(button => {
+    button.addEventListener("click", () => {
+      const emailTarget = button.dataset.emailTarget;
+      const emailInput = emailTarget ? document.querySelector(emailTarget) : null;
+      if (emailInput && !emailInput.value.trim()) {
+        emailInput.focus();
+      }
+
+      showNotice("Recuperación visible: falta conectar el correo de HÁGALE para enviar enlaces reales.");
+    });
+  });
+}
+
 function setAuthForm(mode) {
   app.querySelectorAll("[data-auth-mode]").forEach(button => {
     button.setAttribute("aria-selected", String(button.dataset.authMode === mode));
@@ -2216,10 +2254,18 @@ function setAuthForm(mode) {
       ${renderGoogleAuthSection("login")}
       <form id="login-form">
         <div class="field"><label for="login-email">Correo</label><input id="login-email" name="email" type="email" autocomplete="email" required></div>
-        <div class="field"><label for="login-password">Contraseña</label><input id="login-password" name="password" type="password" autocomplete="current-password" required></div>
+        <div class="field">
+          <label for="login-password">Contraseña</label>
+          <div class="password-control">
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+            <button class="password-toggle" type="button" data-toggle-password="#login-password" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña">${renderPasswordIcon()}</button>
+          </div>
+          <button class="forgot-password-link" type="button" data-forgot-password data-email-target="#login-email">¿Olvidaste tu contraseña?</button>
+        </div>
         <button class="button button-primary" type="submit">Ingresar</button>
       </form>`;
     document.querySelector("#login-form").addEventListener("submit", handleLogin);
+    bindAuthUtilities();
     bindGoogleAuthSection("login");
     return;
   }
@@ -2235,10 +2281,18 @@ function setAuthForm(mode) {
       </div>
       <div class="field"><label for="email">Correo</label><input id="email" name="email" type="email" autocomplete="email" required></div>
       <div class="field"><label for="phone">Celular</label><input id="phone" name="phoneNumber" inputmode="tel" placeholder="+573001234567" pattern="\\+[1-9]\\d{7,14}" required></div>
-      <div class="field"><label for="password">Contraseña</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required></div>
+      <div class="field">
+        <label for="password">Contraseña</label>
+        <div class="password-control">
+          <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+          <button class="password-toggle" type="button" data-toggle-password="#password" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña">${renderPasswordIcon()}</button>
+        </div>
+        <button class="forgot-password-link" type="button" data-forgot-password data-email-target="#email">¿Olvidaste tu contraseña?</button>
+      </div>
       <button class="button button-primary" type="submit">Crear mi cuenta</button>
     </form>`;
   document.querySelector("#register-form").addEventListener("submit", handleRegister);
+  bindAuthUtilities();
   bindGoogleAuthSection("register");
 }
 
