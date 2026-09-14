@@ -2,6 +2,8 @@ const apiRoot = "/api/v1";
 const sessionKey = "hagale.access-token";
 const modeKey = "hagale.active-mode";
 const customerNavKey = "hagale.customer-nav";
+const customerRideStepKey = "hagale.customer-ride-step";
+const customerRideDraftKey = "hagale.customer-ride-draft";
 const dispatchRadiusKey = "hagale.dispatch-radius-km";
 const driverSoundAlertsKey = "hagale.driver-sound-alerts";
 const driverVoiceAlertsKey = "hagale.driver-voice-alerts";
@@ -10,10 +12,32 @@ const visualModeKey = "hagale.visual-mode";
 const app = document.querySelector("#app");
 const notice = document.querySelector("#notice");
 
+function getDefaultCustomerRideDraft() {
+  return {
+    pickupAddress: "",
+    destinationAddress: "",
+    pricingRuleKey: "",
+    proposedPriceCop: "",
+    paymentMethod: "Cash",
+    fareMode: "PassengerOffer"
+  };
+}
+
+function loadCustomerRideDraft() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(customerRideDraftKey) || "null");
+    return { ...getDefaultCustomerRideDraft(), ...(saved || {}) };
+  } catch {
+    return getDefaultCustomerRideDraft();
+  }
+}
+
 const state = {
   token: sessionStorage.getItem(sessionKey),
   activeMode: sessionStorage.getItem(modeKey) || "Customer",
   customerNav: sessionStorage.getItem(customerNavKey) || "ride",
+  customerRideStep: sessionStorage.getItem(customerRideStepKey) || "locations",
+  customerRideDraft: loadCustomerRideDraft(),
   profile: null,
   application: null,
   rideRequests: [],
@@ -3571,56 +3595,225 @@ function renderCustomerLaunchOfferPanel() {
     </section>`;
 }
 
-function renderRideRequestPanel() {
-  const openRequest = getOpenCustomerRideRequest();
-  const activePricingRules = (state.pricingRules || []).filter(rule => rule.isActive);
-  const pricingOptions = activePricingRules.map(rule =>
-    `<option value="${escapeHtml(rule.cityCode)}|${escapeHtml(rule.serviceType)}" data-minimum-fare="${rule.minimumFareCop}">${escapeHtml(rule.cityCode)} · ${escapeHtml(label[rule.serviceType] || rule.serviceType)} · mínimo ${formatCop(rule.minimumFareCop)}</option>`).join("");
-  const initialMinimumFare = activePricingRules[0]?.minimumFareCop;
-  const openRequestMessage = openRequest?.status === "Pending"
-    ? "Tu solicitud está buscando conductor. Puedes cancelarla mientras siga pendiente."
-    : openRequest?.status === "CounterOfferPending"
-      ? "Tienes una contraoferta pendiente. Decide si la aceptas o rechazas antes de continuar."
-      : "Tienes un servicio activo. El formulario para solicitar otro recorrido volverá cuando este finalice.";
-  const requestForm = openRequest
-    ? `<div class="request-in-progress"><div><strong>Una solicitud a la vez</strong><p>${openRequestMessage}</p></div><div class="request-in-progress-actions">${statusBadge(openRequest.status)}<button class="button button-secondary small" type="button" data-refresh-customer-status>Actualizar estado</button><button class="button button-secondary small" type="button" data-customer-nav="history">Ver historial</button></div></div><ul class="customer-history-list customer-current-list">${renderCustomerRideHistoryItem(openRequest, { showTimeline: true })}</ul>`
-    : activePricingRules.length
-    ? `
+function saveCustomerRideDraft(patch = {}) {
+  state.customerRideDraft = {
+    ...getDefaultCustomerRideDraft(),
+    ...(state.customerRideDraft || {}),
+    ...patch
+  };
+  sessionStorage.setItem(customerRideDraftKey, JSON.stringify(state.customerRideDraft));
+  return state.customerRideDraft;
+}
+
+function clearCustomerRideDraft() {
+  state.customerRideDraft = getDefaultCustomerRideDraft();
+  sessionStorage.removeItem(customerRideDraftKey);
+}
+
+function setCustomerRideStep(step) {
+  const nextStep = step === "details" ? "details" : "locations";
+  state.customerRideStep = nextStep;
+  sessionStorage.setItem(customerRideStepKey, nextStep);
+  renderDashboard();
+  if (nextStep === "details") void refreshCustomerRideQuote();
+}
+
+function renderCustomerRideStepIndicator(activeStep) {
+  const steps = [
+    { id: "locations", number: "1", title: "Direcciones" },
+    { id: "details", number: "2", title: "Tarifa y opciones" },
+    { id: "search", number: "3", title: "Búsqueda" }
+  ];
+  return `
+    <ol class="customer-ride-stepper" aria-label="Pasos para pedir una moto">
+      ${steps.map(step => `
+        <li class="${activeStep === step.id ? "is-active" : activeStep === "search" || (activeStep === "details" && step.id === "locations") ? "is-complete" : ""}">
+          <span>${step.number}</span>
+          <strong>${step.title}</strong>
+        </li>`).join("")}
+    </ol>`;
+}
+
+function renderCustomerRideLocationsStep() {
+  const draft = state.customerRideDraft || getDefaultCustomerRideDraft();
+  return `
+    <section class="customer-ride-stage customer-ride-stage-locations">
+      ${renderCustomerRideStepIndicator("locations")}
+      <div class="customer-ride-stage-heading">
+        <span class="eyebrow">Pantalla 1 · ruta</span>
+        <h3>¿De dónde y hacia dónde?</h3>
+        <p>Primero guarda los dos puntos del recorrido. Después revisas precio, forma de pago y tipo de tarifa.</p>
+      </div>
+      <form id="ride-location-step-form" class="form-grid ride-request-form customer-ride-form">
+        <div class="field wide route-entry route-entry-a">
+          <label for="ride-pickup"><span aria-hidden="true">A</span> Punto de recogida</label>
+          <input id="ride-pickup" name="pickupAddress" value="${escapeHtml(draft.pickupAddress)}" minlength="5" maxlength="250" autocomplete="street-address" placeholder="Ej.: Calle 72 # 10-07" required>
+          <div class="location-actions">
+            <button class="location-button" type="button" data-capture-pickup-location>Usar GPS</button>
+            <button class="location-button" type="button" data-open-ride-map="pickup">Elegir en el mapa</button>
+          </div>
+          <span id="pickup-location-status" class="small-text muted">${state.pendingPickupLocation ? "Punto A listo para esta solicitud." : "Escribe la dirección o toca el mapa para ubicar A."}</span>
+        </div>
+        <div class="field wide route-entry route-entry-b">
+          <label for="ride-destination"><span aria-hidden="true">B</span> Destino</label>
+          <input id="ride-destination" name="destinationAddress" value="${escapeHtml(draft.destinationAddress)}" minlength="5" maxlength="250" autocomplete="street-address" placeholder="Ej.: Centro Comercial Cacique" required>
+          <div class="location-actions">
+            <button class="location-button" type="button" data-open-ride-map="destination">Elegir en el mapa</button>
+          </div>
+          <span id="destination-location-status" class="small-text muted">${state.pendingDestinationLocation ? "Punto B listo para esta solicitud." : "Escribe la dirección o toca el mapa para ubicar B."}</span>
+        </div>
+        <section class="ride-location-picker ride-map-stage" data-ride-location-picker hidden aria-live="polite">
+          <div class="ride-location-picker-heading">
+            <div><span class="eyebrow">Mapa de la solicitud</span><h3>Elige A y B en el mapa</h3><p class="muted small-text" data-ride-map-instruction>Toca el mapa para ubicar el origen (A).</p></div>
+            <button class="button button-quiet small" type="button" data-close-ride-map>Cerrar mapa</button>
+          </div>
+          <div class="ride-map-targets" role="group" aria-label="Punto que se va a marcar">
+            <button class="button button-secondary small is-selected" type="button" data-select-ride-map-target="pickup" aria-pressed="true">A · Origen</button>
+            <button class="button button-secondary small" type="button" data-select-ride-map-target="destination" aria-pressed="false">B · Destino</button>
+          </div>
+          <div class="ride-location-map-frame"><div class="ride-location-map" data-ride-location-map aria-label="Mapa para elegir origen o destino"></div></div>
+          <p class="small-text muted">El mapa es opcional. Si editas una dirección después de marcarla, el punto se quitará para evitar enviar una ubicación equivocada.</p>
+        </section>
+        <div class="button-row customer-request-actions">
+          <button class="button button-primary customer-next-step" type="submit">Continuar con tarifa <span aria-hidden="true">→</span></button>
+        </div>
+      </form>
+    </section>`;
+}
+
+function renderCustomerRideDetailsStep(activePricingRules) {
+  const draft = state.customerRideDraft || getDefaultCustomerRideDraft();
+  const firstRule = activePricingRules[0];
+  const defaultRuleKey = firstRule ? `${firstRule.cityCode}|${firstRule.serviceType}` : "";
+  const selectedRuleKey = draft.pricingRuleKey || defaultRuleKey;
+  const selectedRule = activePricingRules.find(rule => `${rule.cityCode}|${rule.serviceType}` === selectedRuleKey) || firstRule;
+  const selectedRuleValue = selectedRule ? `${selectedRule.cityCode}|${selectedRule.serviceType}` : selectedRuleKey;
+  const initialMinimumFare = Number(selectedRule?.minimumFareCop || 0);
+  const savedPrice = Number(draft.proposedPriceCop);
+  const proposedPrice = Number.isFinite(savedPrice) && savedPrice >= initialMinimumFare ? savedPrice : initialMinimumFare;
+  const pricingOptions = activePricingRules.map(rule => {
+    const value = `${rule.cityCode}|${rule.serviceType}`;
+    return `<option value="${escapeHtml(value)}" data-minimum-fare="${rule.minimumFareCop}" ${value === selectedRuleValue ? "selected" : ""}>${escapeHtml(rule.cityCode)} · ${escapeHtml(label[rule.serviceType] || rule.serviceType)} · mínimo ${formatCop(rule.minimumFareCop)}</option>`;
+  }).join("");
+  const paymentMethod = draft.paymentMethod || "Cash";
+  const fareMode = draft.fareMode || "PassengerOffer";
+
+  return `
+    <section class="customer-ride-stage customer-ride-stage-details">
+      ${renderCustomerRideStepIndicator("details")}
+      <div class="customer-ride-stage-heading">
+        <span class="eyebrow">Pantalla 2 · propuesta</span>
+        <h3>Define cómo quieres viajar</h3>
+        <p>Revisa el recorrido, elige la tarifa y confirma las condiciones antes de enviarlo a los conductores.</p>
+      </div>
+      <div class="customer-route-summary" aria-label="Resumen del recorrido">
+        <div><span class="route-letter route-letter-a">A</span><p><small>Recogida</small><strong>${escapeHtml(draft.pickupAddress)}</strong></p></div>
+        <div class="customer-route-summary-line" aria-hidden="true"></div>
+        <div><span class="route-letter route-letter-b">B</span><p><small>Destino</small><strong>${escapeHtml(draft.destinationAddress)}</strong></p></div>
+        <button class="button button-secondary small" type="button" data-customer-ride-step="locations">← Editar direcciones</button>
+      </div>
       <form id="ride-request-form" class="form-grid ride-request-form customer-ride-form">
-        <div class="field wide route-entry route-entry-a"><label for="ride-pickup"><span aria-hidden="true">A</span> Mi ubicación actual</label><input id="ride-pickup" name="pickupAddress" minlength="5" maxlength="250" placeholder="Escribe tu origen, por ejemplo: Calle 72 # 10-07" required><div class="location-actions"><button class="location-button" type="button" data-capture-pickup-location>Usar GPS</button><button class="location-button" type="button" data-open-ride-map="pickup">Elegir en el mapa</button></div><span id="pickup-location-status" class="small-text muted">${state.pendingPickupLocation ? "Punto A listo para esta solicitud." : "Escribe la dirección o toca el mapa para ubicar A."}</span></div>
-        <div class="field wide route-entry route-entry-b"><label for="ride-destination"><span aria-hidden="true">B</span> Destino</label><input id="ride-destination" name="destinationAddress" minlength="5" maxlength="250" placeholder="¿A dónde quieres ir?" required><div class="location-actions"><button class="location-button" type="button" data-open-ride-map="destination">Elegir en el mapa</button></div><span id="destination-location-status" class="small-text muted">${state.pendingDestinationLocation ? "Punto B listo para esta solicitud." : "Escribe la dirección o toca el mapa para ubicar B."}</span></div>
-        <div class="field"><label for="ride-pricing-rule">Ciudad y servicio</label><select id="ride-pricing-rule" name="pricingRuleKey">${pricingOptions}</select></div>
-        <div class="field"><label for="ride-proposed-price">Tu oferta (COP)</label><input id="ride-proposed-price" name="proposedPriceCop" type="number" min="${initialMinimumFare}" step="1" value="${initialMinimumFare}" required></div>
-        <p id="minimum-fare-hint" class="callout wide">Tarifa mínima vigente: ${formatCop(initialMinimumFare)}. Tu oferta puede ser mayor; no se inventan cobros ni tiempos de llegada.</p>
+        <div class="field wide"><label for="ride-pricing-rule">Ciudad y servicio</label><select id="ride-pricing-rule" name="pricingRuleKey">${pricingOptions}</select></div>
+        <div class="field wide ride-price-field"><label for="ride-proposed-price">Tu oferta (COP)</label><input id="ride-proposed-price" name="proposedPriceCop" type="number" min="${initialMinimumFare}" step="1" value="${proposedPrice}" required><span class="small-text">El valor nunca puede ser menor a la tarifa mínima.</span></div>
+        <p id="minimum-fare-hint" class="callout wide">Tarifa mínima vigente: ${formatCop(initialMinimumFare)}. Puedes proponer un valor mayor para atraer más conductores.</p>
         <p id="ride-price-reference" class="ride-price-reference wide" aria-live="polite">${renderCustomerRideQuote()}</p>
         <fieldset class="ride-options-card wide">
           <legend>Pago y tarifa</legend>
-          <p>Esto queda guardado en la solicitud para que cliente y conductor vean la misma información.</p>
+          <p>Estas preferencias viajarán junto con la solicitud para que ambos vean la misma información.</p>
           <div class="ride-choice-grid" role="group" aria-label="Método de pago">
-            <label class="ride-choice-pill"><input type="radio" name="paymentMethod" value="Cash" checked><span>💵 Efectivo</span><small>Pago directo al conductor.</small></label>
-            <label class="ride-choice-pill"><input type="radio" name="paymentMethod" value="Nequi"><span>Nequi</span><small>Preferencia visible; pago real se integrará después.</small></label>
+            <label class="ride-choice-pill"><input type="radio" name="paymentMethod" value="Cash" ${paymentMethod === "Cash" ? "checked" : ""}><span>💵 Efectivo</span><small>Pago directo al conductor.</small></label>
+            <label class="ride-choice-pill"><input type="radio" name="paymentMethod" value="Nequi" ${paymentMethod === "Nequi" ? "checked" : ""}><span>Nequi</span><small>Preferencia visible; el pago real se integrará después.</small></label>
           </div>
           <div class="ride-choice-grid" role="group" aria-label="Modo de tarifa">
-            <label class="ride-choice-pill"><input type="radio" name="fareMode" value="PassengerOffer" checked><span>Tu oferta</span><small>El pasajero propone el valor.</small></label>
-            <label class="ride-choice-pill"><input type="radio" name="fareMode" value="DynamicFare"><span>Tarifa dinámica</span><small>Base preparada para cálculo automático.</small></label>
+            <label class="ride-choice-pill"><input type="radio" name="fareMode" value="PassengerOffer" ${fareMode === "PassengerOffer" ? "checked" : ""}><span>Tu oferta</span><small>El pasajero propone el valor.</small></label>
+            <label class="ride-choice-pill"><input type="radio" name="fareMode" value="DynamicFare" ${fareMode === "DynamicFare" ? "checked" : ""}><span>Tarifa dinámica</span><small>Base preparada para cálculo automático.</small></label>
           </div>
         </fieldset>
-        <section class="ride-location-picker ride-map-stage" data-ride-location-picker aria-live="polite">
-          <div class="ride-location-picker-heading"><div><span class="eyebrow">Mapa de la solicitud</span><h3>Elige A y B en el mapa</h3><p class="muted small-text" data-ride-map-instruction>Toca el mapa para ubicar el origen (A).</p></div><button class="button button-quiet small" type="button" data-close-ride-map>Cerrar mapa</button></div>
-          <div class="ride-map-targets" role="group" aria-label="Punto que se va a marcar"><button class="button button-secondary small is-selected" type="button" data-select-ride-map-target="pickup" aria-pressed="true">A · Origen</button><button class="button button-secondary small" type="button" data-select-ride-map-target="destination" aria-pressed="false">B · Destino</button></div>
-          <div class="ride-location-map-frame"><div class="ride-location-map" data-ride-location-map aria-label="Mapa para elegir origen o destino"></div></div>
-          <p class="small-text muted">Escribe primero las direcciones. Si editas una dirección después de marcarla, el punto se quitará para evitar enviar una ubicación equivocada.</p>
-        </section>
-        <div class="button-row customer-request-actions"><button class="button button-primary" type="submit">¡Pedir moto!</button></div>
-      </form>`
-    : '<p class="empty">Todavía no hay una tarifa activa para solicitar este servicio. Un administrador debe configurarla primero.</p>';
+        <div class="button-row customer-request-actions">
+          <button class="button button-primary customer-submit-request" type="submit">Verificar y pedir moto <span aria-hidden="true">→</span></button>
+        </div>
+      </form>
+    </section>`;
+}
+
+function renderCustomerSearchingPanel(rideRequest) {
+  return `
+    <section class="customer-search-card" aria-live="polite">
+      <div class="customer-search-map" aria-hidden="true">
+        <span class="search-map-road search-map-road-one"></span><span class="search-map-road search-map-road-two"></span>
+        <span class="search-map-pin search-map-pin-a">A</span><span class="search-map-pin search-map-pin-b">B</span>
+        <span class="search-map-pulse"></span><span class="search-map-bike">🏍</span>
+      </div>
+      <div class="customer-search-content">
+        ${renderCustomerRideStepIndicator("search")}
+        <span class="eyebrow">Pantalla 3 · despacho</span>
+        <h3>Buscando conductor</h3>
+        <p class="customer-search-lead">Tu solicitud ya fue enviada. HÁGALE la mostrará aquí cuando un conductor la vea o acepte.</p>
+        <div class="customer-search-route">
+          <div><span class="route-letter route-letter-a">A</span><strong>${escapeHtml(rideRequest.pickupAddress)}</strong></div>
+          <div><span class="route-letter route-letter-b">B</span><strong>${escapeHtml(rideRequest.destinationAddress)}</strong></div>
+        </div>
+        <div class="customer-search-progress"><div><span>Despacho activo</span><strong>Esperando respuestas</strong></div><span class="customer-search-progress-track"><i></i></span></div>
+        <div class="customer-search-offer"><span>Oferta enviada</span><strong>${formatCop(rideRequest.proposedPriceCop)}</strong><small>${escapeHtml(getRidePaymentMethodLabel(rideRequest))} · ${escapeHtml(getRideFareModeLabel(rideRequest))}</small></div>
+        <div class="customer-search-actions">
+          <button class="button button-secondary small" type="button" data-refresh-customer-status>Actualizar estado</button>
+          <button class="button button-danger small" type="button" data-cancel-ride="${rideRequest.id}">Cancelar solicitud</button>
+          <button class="button button-quiet small" type="button" data-customer-nav="history">Ver historial</button>
+        </div>
+      </div>
+    </section>`;
+}
+
+function renderCustomerCounterOfferPanel(rideRequest) {
+  const counterOffer = rideRequest.counterOfferPriceCop || rideRequest.proposedPriceCop;
+  return `
+    <section class="customer-counteroffer-card" aria-live="polite">
+      <div class="customer-counteroffer-icon" aria-hidden="true">↔</div>
+      <div class="customer-counteroffer-content">
+        ${renderCustomerRideStepIndicator("search")}
+        <span class="eyebrow">Respuesta del conductor</span>
+        <h3>Tienes una propuesta para revisar</h3>
+        <p>El conductor respondió a tu solicitud. Revisa el valor y decide antes de que se cierre esta oferta.</p>
+        <div class="customer-counteroffer-route"><span>A</span><strong>${escapeHtml(rideRequest.pickupAddress)}</strong><span>B</span><strong>${escapeHtml(rideRequest.destinationAddress)}</strong></div>
+        <div class="customer-counteroffer-price"><span>Contraoferta</span><strong>${formatCop(counterOffer)}</strong><small>Tu oferta original: ${formatCop(rideRequest.proposedPriceCop)}</small></div>
+        <div class="customer-search-actions">${renderCustomerRideActions(rideRequest)}</div>
+      </div>
+    </section>`;
+}
+
+function renderRideRequestPanel() {
+  const openRequest = getOpenCustomerRideRequest();
+  const activePricingRules = (state.pricingRules || []).filter(rule => rule.isActive);
+  const requestForm = openRequest
+    ? openRequest.status === "Pending"
+      ? renderCustomerSearchingPanel(openRequest)
+      : openRequest.status === "CounterOfferPending"
+        ? renderCustomerCounterOfferPanel(openRequest)
+        : `<div class="request-in-progress"><div><strong>Servicio activo</strong><p>El seguimiento del viaje está separado en su propia pantalla para que solo veas lo importante.</p></div><div class="request-in-progress-actions">${statusBadge(openRequest.status)}<button class="button button-secondary small" type="button" data-customer-nav="tracking">Ver seguimiento</button><button class="button button-secondary small" type="button" data-customer-nav="history">Ver historial</button></div></div>`
+    : activePricingRules.length
+      ? state.customerRideStep === "details"
+        ? renderCustomerRideDetailsStep(activePricingRules)
+        : renderCustomerRideLocationsStep()
+      : '<p class="empty">Todavía no hay una tarifa activa para solicitar este servicio. Un administrador debe configurarla primero.</p>';
+  const stageTitle = openRequest
+    ? openRequest.status === "Pending"
+      ? "Tu solicitud está en búsqueda"
+      : openRequest.status === "CounterOfferPending"
+        ? "Revisa la respuesta"
+        : "Tu solicitud actual"
+    : state.customerRideStep === "details"
+      ? "Elige tarifa y confirma"
+      : "Primero ubica tu recorrido";
+  const stageDescription = openRequest
+    ? "Cada momento del servicio tiene su propia pantalla: búsqueda, respuesta del conductor y seguimiento."
+    : "HÁGALE separa las decisiones para que pedir una moto sea rápido y fácil de operar.";
 
   return `
     <article id="customer-ride-request" class="card customer-request-card" data-reveal>
       <span class="eyebrow">HÁGALE · solicitar moto</span>
-      <h2>${openRequest ? "Tu solicitud actual" : "Solicita tu recorrido"}</h2>
-      <p class="muted">${openRequest ? "Revisa y administra el servicio en curso. Para evitar solicitudes duplicadas, el nuevo recorrido se habilita cuando este se cierre." : "Marca origen y destino, revisa tu oferta y pide una moto. Cuando haya asignación podrás seguir los estados y la última ubicación compartida durante el servicio."}</p>
-      ${renderCustomerLaunchOfferPanel()}
+      <h2>${stageTitle}</h2>
+      <p class="muted">${stageDescription}</p>
+      ${!openRequest && state.customerRideStep === "locations" ? renderCustomerLaunchOfferPanel() : ""}
       ${requestForm}
       <div class="customer-request-footer"><button class="button button-secondary small" type="button" data-customer-nav="history">Ver historial completo</button><span>El historial está separado para que pedir una moto sea un panel limpio.</span></div>
     </article>`;
@@ -4111,10 +4304,22 @@ function bindDriverEvents() {
   app.querySelectorAll("[data-dismiss-offer]").forEach(button => {
     button.addEventListener("click", () => dismissDriverOffer(button.dataset.dismissOffer));
   });
+  const rideLocationStepForm = app.querySelector("#ride-location-step-form");
+  if (rideLocationStepForm) rideLocationStepForm.addEventListener("submit", continueRideRequestDetails);
+  app.querySelectorAll("[data-customer-ride-step]").forEach(button => {
+    button.addEventListener("click", () => setCustomerRideStep(button.dataset.customerRideStep));
+  });
   const rideRequestForm = app.querySelector("#ride-request-form");
   if (rideRequestForm) rideRequestForm.addEventListener("submit", createRideRequest);
   const ridePricingRule = app.querySelector("#ride-pricing-rule");
   if (ridePricingRule) ridePricingRule.addEventListener("change", syncSelectedPricingRule);
+  const ridePriceInput = app.querySelector("#ride-proposed-price");
+  if (ridePriceInput) ridePriceInput.addEventListener("input", () => {
+    saveCustomerRideDraft({ proposedPriceCop: ridePriceInput.value });
+  });
+  app.querySelectorAll("#ride-request-form input[name='paymentMethod'], #ride-request-form input[name='fareMode']").forEach(input => {
+    input.addEventListener("change", () => saveCustomerRideDraft({ [input.name]: input.value }));
+  });
   app.querySelectorAll("[data-cancel-ride]").forEach(button => {
     button.addEventListener("click", () => cancelRideRequest(button.dataset.cancelRide));
   });
@@ -4308,14 +4513,42 @@ function getSelectedDocumentFile(formData) {
   return candidates.find(value => value instanceof File && value.size > 0) || null;
 }
 
+function continueRideRequestDetails(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget));
+  const pickupAddress = String(data.pickupAddress || "").trim();
+  const destinationAddress = String(data.destinationAddress || "").trim();
+  if (pickupAddress.length < 5 || destinationAddress.length < 5) {
+    showNotice("Escribe una dirección válida para A y otra para B.", true);
+    return;
+  }
+
+  saveCustomerRideDraft({ pickupAddress, destinationAddress });
+  state.customerRideStep = "details";
+  sessionStorage.setItem(customerRideStepKey, state.customerRideStep);
+  renderDashboard();
+  void refreshCustomerRideQuote();
+  showNotice("Direcciones guardadas. Ahora revisa la tarifa y las opciones.");
+}
+
 async function createRideRequest(event) {
   event.preventDefault();
   try {
     const data = Object.fromEntries(new FormData(event.currentTarget));
+    const draft = state.customerRideDraft || getDefaultCustomerRideDraft();
     const [operatingCityCode, serviceType] = data.pricingRuleKey.split("|");
     data.operatingCityCode = operatingCityCode;
     data.serviceType = serviceType;
     data.proposedPriceCop = Number(data.proposedPriceCop);
+    saveCustomerRideDraft({
+      ...draft,
+      pricingRuleKey: data.pricingRuleKey,
+      proposedPriceCop: String(data.proposedPriceCop),
+      paymentMethod: data.paymentMethod || "Cash",
+      fareMode: data.fareMode || "PassengerOffer"
+    });
+    data.pickupAddress = draft.pickupAddress;
+    data.destinationAddress = draft.destinationAddress;
     if (state.pendingPickupLocation) {
       Object.assign(data, state.pendingPickupLocation);
     }
@@ -4333,7 +4566,10 @@ async function createRideRequest(event) {
     state.customerRideQuote = null;
     state.customerRideQuoteVersion += 1;
     state.customerNav = "ride";
+    state.customerRideStep = "locations";
     sessionStorage.setItem(customerNavKey, state.customerNav);
+    sessionStorage.setItem(customerRideStepKey, state.customerRideStep);
+    clearCustomerRideDraft();
     renderDashboard();
     showNotice("Solicitud creada. Aún no tiene conductor asignado.");
   } catch (error) { showNotice(error.message, true); }
@@ -4342,12 +4578,14 @@ async function createRideRequest(event) {
 function syncSelectedPricingRule(event) {
   const selectedOption = event.currentTarget.selectedOptions[0];
   const minimumFare = Number(selectedOption?.dataset.minimumFare);
+  saveCustomerRideDraft({ pricingRuleKey: event.currentTarget.value });
   const priceInput = app.querySelector("#ride-proposed-price");
   const hint = app.querySelector("#minimum-fare-hint");
   if (!Number.isFinite(minimumFare) || minimumFare <= 0 || !priceInput || !hint) return;
 
   priceInput.min = String(minimumFare);
   priceInput.value = String(minimumFare);
+  saveCustomerRideDraft({ proposedPriceCop: String(minimumFare) });
   hint.textContent = `Tarifa mínima vigente: ${formatCop(minimumFare)}. Las ubicaciones son opcionales; si las compartes, el despacho podrá mostrar los puntos A y B y ordenar por cercanía.`;
   void refreshCustomerRideQuote();
 }
@@ -4609,11 +4847,14 @@ function signOut(notify = true) {
   state.customerTrackingVersion += 1;
   state.rideMapPickerTarget = "pickup";
   state.customerNav = "ride";
+  state.customerRideStep = "locations";
+  clearCustomerRideDraft();
   state.driverNav = "requests";
   state.hiddenDriverOfferIds.clear();
   sessionStorage.removeItem(sessionKey);
   sessionStorage.removeItem(modeKey);
   sessionStorage.removeItem(customerNavKey);
+  sessionStorage.removeItem(customerRideStepKey);
   renderWelcome();
   if (notify) showNotice("Sesión cerrada.");
 }
