@@ -671,6 +671,38 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); outline: 2
   gap: .55rem;
 }
 
+.document-upload-form {
+  display: grid;
+  gap: .75rem;
+}
+
+.document-update-details {
+  display: grid;
+  gap: .65rem;
+  border: 1px solid rgba(255,216,0,.35);
+  border-radius: .78rem;
+  background: #050506;
+}
+
+.document-update-details summary {
+  padding: .72rem .82rem;
+  color: #ffd800;
+  cursor: pointer;
+  font-weight: 950;
+}
+
+.document-update-details[open] {
+  padding-bottom: .85rem;
+}
+
+.document-update-details[open] summary {
+  border-bottom: 1px solid rgba(255,216,0,.22);
+}
+
+.document-update-details .document-upload-form {
+  padding: 0 .82rem;
+}
+
 .document-file-action {
   position: relative;
   display: grid;
@@ -2383,6 +2415,7 @@ body.welcome-view {
 
 .welcome-auth-card {
   display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 1rem;
   width: min(100vw, 29rem);
   max-width: calc(100svh * 9 / 16);
@@ -2399,7 +2432,23 @@ body.welcome-view {
 
 #auth-form {
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  padding: 0 .15rem .75rem;
+  scrollbar-width: thin;
+  scrollbar-color: #ffd800 #111218;
+}
+
+#auth-form::-webkit-scrollbar {
+  width: .45rem;
+}
+
+#auth-form::-webkit-scrollbar-track {
+  background: #111218;
+}
+
+#auth-form::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #ffd800;
 }
 
 #auth-form > form {

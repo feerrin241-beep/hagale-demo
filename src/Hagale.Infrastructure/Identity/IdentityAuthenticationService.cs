@@ -19,6 +19,7 @@ public sealed class IdentityAuthenticationService(
 {
     private const string GoogleLoginProvider = "Google";
     private const string DemoGoogleClientId = "134600801456-8v2l6buogvhn3kcnlun1s63ijogan761.apps.googleusercontent.com";
+    private static readonly string[] DemoOwnerEmails = ["ferrin241@gmail.com"];
 
     public async Task<ApplicationResult<AuthenticatedUserDto>> RegisterAsync(RegisterUserCommand command, CancellationToken cancellationToken = default)
     {
@@ -290,6 +291,7 @@ public sealed class IdentityAuthenticationService(
 
     private async Task<AuthenticatedUserDto> CreateAuthenticatedUserAsync(AppUser user, CancellationToken cancellationToken)
     {
+        await EnsureDemoOwnerAdministratorRoleAsync(user);
         var token = await tokenService.CreateAsync(user, cancellationToken);
         return new AuthenticatedUserDto(
             user.Id,
@@ -299,6 +301,28 @@ public sealed class IdentityAuthenticationService(
             token.Roles,
             token.Value,
             token.ExpiresAtUtc);
+    }
+
+    private async Task EnsureDemoOwnerAdministratorRoleAsync(AppUser user)
+    {
+        if (!hostEnvironment.IsEnvironment("Demo"))
+        {
+            return;
+        }
+
+        var email = user.Email?.Trim();
+        if (string.IsNullOrWhiteSpace(email)
+            || !DemoOwnerEmails.Contains(email, StringComparer.OrdinalIgnoreCase)
+            || await userManager.IsInRoleAsync(user, HagaleRoles.Administrator))
+        {
+            return;
+        }
+
+        var roleResult = await userManager.AddToRoleAsync(user, HagaleRoles.Administrator);
+        if (!roleResult.Succeeded)
+        {
+            logger.LogWarning("No fue posible activar el rol administrador demo para {Email}.", user.Email);
+        }
     }
 
     private static string NormalizeExternalName(string? preferred, string? alternative, string fallback)

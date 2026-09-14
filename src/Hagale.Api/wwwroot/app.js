@@ -270,10 +270,30 @@ function renderDriverDocumentUploadCard(type, document, isRequired) {
   const expiryLabel = type === "SelfieVerification" || type === "PersonalIdentification"
     ? "Vencimiento (si aplica)"
     : "Fecha de vencimiento";
+  const uploadControls = renderDriverDocumentUploadControls(type, slug, expiryLabel, document ? "Reenviar documento" : "Enviar a revisión");
+
+  if (document) {
+    return `
+      <article class="driver-document-upload-card has-document">
+        <div class="document-upload-card-head">
+          <div>
+            <h4>${escapeHtml(label[type] || type)}</h4>
+            <p>${escapeHtml(uploadedText)}</p>
+          </div>
+          ${statusBadge(status)}
+        </div>
+        <p class="document-upload-instruction">Documento enviado. Administración lo revisará; si necesitas corregirlo, abre “Actualizar archivo”.</p>
+        <details class="document-update-details">
+          <summary>Actualizar archivo</summary>
+          <form class="document-upload-form" data-document-upload-form>
+            ${uploadControls}
+          </form>
+        </details>
+      </article>`;
+  }
 
   return `
     <form class="driver-document-upload-card ${document ? "has-document" : "is-missing"}" data-document-upload-form>
-      <input type="hidden" name="type" value="${escapeHtml(type)}">
       <div class="document-upload-card-head">
         <div>
           <h4>${escapeHtml(label[type] || type)}</h4>
@@ -282,25 +302,31 @@ function renderDriverDocumentUploadCard(type, document, isRequired) {
         ${statusBadge(status)}
       </div>
       <p class="document-upload-instruction">${escapeHtml(getDriverDocumentInstruction(type))}</p>
-      <div class="field">
-        <label for="document-expiry-${slug}">${expiryLabel}</label>
-        <input id="document-expiry-${slug}" name="expiresOn" type="date">
-      </div>
-      <div class="document-capture-actions">
-        <label class="document-file-action">
-          <span aria-hidden="true">📷</span>
-          <strong>Tomar foto</strong>
-          <input name="cameraFile" type="file" accept="image/*" capture="environment">
-        </label>
-        <label class="document-file-action">
-          <span aria-hidden="true">📁</span>
-          <strong>Subir archivo</strong>
-          <input name="uploadFile" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
-        </label>
-      </div>
-      <p class="selected-document-file" data-selected-document-file>Sin archivo seleccionado.</p>
-      <button class="button button-secondary document-submit-button" type="submit">Enviar a revisión</button>
+      ${uploadControls}
     </form>`;
+}
+
+function renderDriverDocumentUploadControls(type, slug, expiryLabel, submitText) {
+  return `
+    <input type="hidden" name="type" value="${escapeHtml(type)}">
+    <div class="field">
+      <label for="document-expiry-${slug}">${escapeHtml(expiryLabel)}</label>
+      <input id="document-expiry-${slug}" name="expiresOn" type="date">
+    </div>
+    <div class="document-capture-actions">
+      <label class="document-file-action">
+        <span aria-hidden="true">📷</span>
+        <strong>Tomar foto</strong>
+        <input name="cameraFile" type="file" accept="image/*" capture="environment">
+      </label>
+      <label class="document-file-action">
+        <span aria-hidden="true">📁</span>
+        <strong>Subir archivo</strong>
+        <input name="uploadFile" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
+      </label>
+    </div>
+    <p class="selected-document-file" data-selected-document-file>Sin archivo seleccionado.</p>
+    <button class="button button-secondary document-submit-button" type="submit">${escapeHtml(submitText)}</button>`;
 }
 
 // Animaciones nativas y opcionales: no se depende de una librería externa para
@@ -3363,18 +3389,10 @@ function renderDriverPanel(driver, isDriver) {
           </div>
         </div>
       </div>
-      <details class="edit-panel" ${driver.status === "Approved" ? "" : "open"}>
+      <details class="edit-panel" ${driver.vehicles.length ? "" : "open"}>
         <summary>${editorTitle}</summary>
         <p class="small-text">${editorHint}</p>
         <div class="stack">${vehicleEditor}</div>
-        <div class="form-panel-divider"></div>
-        <h3>Agregar o actualizar documento</h3>
-        <form id="document-form" class="form-grid">
-          <div class="field"><label for="document-type">Tipo</label><select id="document-type" name="type"><option value="PersonalIdentification">Documento de identidad</option><option value="DriverLicense">Licencia de conducción</option><option value="VehicleRegistration">Tarjeta de propiedad</option><option value="Insurance">SOAT</option><option value="Roadworthiness">Tecnomecánica</option></select></div>
-          <div class="field"><label for="document-expiry">Vencimiento (opcional)</label><input id="document-expiry" name="expiresOn" type="date"></div>
-          <div class="field wide"><label for="document-file">Archivo</label><input id="document-file" name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required></div>
-          <div class="button-row"><button class="button button-secondary" type="submit">Guardar documento</button></div>
-        </form>
       </details>
     </article>`;
 }
@@ -3396,17 +3414,9 @@ function renderDriverSettingsPanel(driver) {
         <div><h3>Documentos revisados</h3><ul class="document-list">${documents}</ul>${renderAdditionalDriverDocumentList(driver)}${renderDriverDocumentUploadCards(driver)}</div>
       </div>
       <details class="edit-panel">
-        <summary>Editar datos de la moto o documento</summary>
+        <summary>Editar datos de la moto</summary>
         <p class="small-text">Los cambios importantes pueden requerir una nueva validación administrativa.</p>
         <div class="stack">${vehicleEditor}</div>
-        <div class="form-panel-divider"></div>
-        <h3>Agregar o actualizar documento</h3>
-        <form id="document-form" class="form-grid">
-          <div class="field"><label for="document-type">Tipo</label><select id="document-type" name="type"><option value="PersonalIdentification">Documento de identidad</option><option value="DriverLicense">Licencia de conducción</option><option value="VehicleRegistration">Tarjeta de propiedad</option><option value="Insurance">SOAT</option><option value="Roadworthiness">Tecnomecánica</option></select></div>
-          <div class="field"><label for="document-expiry">Vencimiento (opcional)</label><input id="document-expiry" name="expiresOn" type="date"></div>
-          <div class="field wide"><label for="document-file">Archivo</label><input id="document-file" name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required></div>
-          <div class="button-row"><button class="button button-secondary" type="submit">Guardar documento</button></div>
-        </form>
       </details>
     </article>`;
 }
@@ -3946,7 +3956,7 @@ async function addVehicle(event) {
     form.year = Number(form.year);
     state.application = await request("/driver-application/vehicles", { method: "POST", data: form });
     renderDashboard();
-    showNotice("Vehículo registrado.");
+    showNotice("Vehículo registrado. El panel quedó recogido.");
   } catch (error) { showNotice(error.message, true); }
 }
 
@@ -3957,7 +3967,7 @@ async function updateVehicle(event, vehicleId) {
     form.year = Number(form.year);
     state.application = await request(`/driver-application/vehicles/${vehicleId}`, { method: "PUT", data: form });
     renderDashboard();
-    showNotice("Datos de la moto actualizados para revisión.");
+    showNotice("Datos de la moto actualizados. El panel quedó recogido.");
   } catch (error) { showNotice(error.message, true); }
 }
 
@@ -3968,7 +3978,7 @@ async function addDocument(event) {
     if (!form) return;
     state.application = await request("/driver-application/documents", { method: "POST", form });
     renderDashboard();
-    showNotice("Documento cargado para revisión.");
+    showNotice("Documento enviado para revisión. El panel quedó recogido.");
   } catch (error) { showNotice(error.message, true); }
 }
 
