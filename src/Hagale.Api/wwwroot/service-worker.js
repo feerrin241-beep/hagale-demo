@@ -1,9 +1,9 @@
-const CACHE_NAME = "hagale-shell-20260914-27";
+const CACHE_NAME = "hagale-shell-20260914-28";
 const APP_SHELL = [
   "/",
   "/index.html",
-  "/app.css?v=20260914-27",
-  "/app.js?v=20260914-27",
+  "/app.css?v=20260914-28",
+  "/app.js?v=20260914-28",
   "/vendor/leaflet/leaflet.css",
   "/vendor/leaflet/leaflet.js",
   "/vendor/signalr/signalr.min.js",
@@ -61,5 +61,16 @@ self.addEventListener("fetch", event => {
         if (request.mode === "navigate") return caches.match("/index.html");
         throw new Error("HÁGALE no está disponible sin conexión para este recurso.");
       })
+  );
+});
+
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(clientList => {
+      const existingClient = clientList.find(client => new URL(client.url).origin === self.location.origin);
+      if (existingClient) return existingClient.focus();
+      return clients.openWindow("/");
+    })
   );
 });

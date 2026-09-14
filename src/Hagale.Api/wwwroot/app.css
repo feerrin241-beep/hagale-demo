@@ -1020,7 +1020,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); outline: 2
   position: fixed;
   right: 1rem;
   bottom: 1rem;
-  z-index: 5;
+  z-index: 100;
   max-width: min(420px, calc(100% - 2rem));
   padding: .85rem 1rem;
   border-radius: .75rem;
@@ -1035,6 +1035,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); outline: 2
 
 .notice.show { opacity: 1; transform: translateY(0); }
 .notice.error { background: var(--danger); }
+.notice.alert {
+  border: 3px solid #111218;
+  color: #111218;
+  background: #ffd800;
+  font-size: 1.03rem;
+  font-weight: 900;
+  box-shadow: 0 0 0 .25rem rgba(255,216,0,.25), 0 16px 36px rgba(0,0,0,.3);
+  animation: noticeAlertPulse .9s ease-out;
+}
+
+@keyframes noticeAlertPulse {
+  0% { transform: translateY(1rem) scale(.96); }
+  55% { transform: translateY(0) scale(1.035); }
+  100% { transform: translateY(0) scale(1); }
+}
 
 @media (max-width: 760px) {
   .site-header { min-height: 62px; padding: .8rem 1.25rem; }
@@ -3686,21 +3701,40 @@ body.welcome-view {
 
   .customer-app-header {
     top: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: .65rem;
     min-height: 4rem;
     margin: 0;
     border-width: 0 0 1px;
     border-radius: 0;
   }
 
+  .customer-app-header .customer-mobile-brand {
+    flex: 0 0 auto;
+  }
+
   .customer-app-actions {
-    flex-wrap: nowrap;
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
     gap: .32rem;
   }
 
   .customer-app-actions .button {
+    flex: 0 0 auto;
+    max-width: 100%;
     min-height: 2.25rem;
     padding-inline: .52rem;
     font-size: .72rem;
+  }
+
+  .notice {
+    right: .7rem;
+    bottom: calc(.7rem + env(safe-area-inset-bottom));
+    max-width: calc(100% - 1.4rem);
   }
 
   .customer-panel-shell > .mode-hero {
@@ -4433,7 +4467,17 @@ body.welcome-view {
 @media (max-width: 760px) {
   .driver-mobile-header {
     grid-template-columns: 2.45rem auto minmax(6rem, 1fr) 2.45rem 2.45rem;
+    grid-template-areas:
+      "menu brand status visual settings"
+      "alert alert alert alert alert";
   }
+
+  .driver-mobile-header > .driver-mobile-icon:first-child { grid-area: menu; }
+  .driver-mobile-brand { grid-area: brand; }
+  .driver-mobile-header .driver-availability-toggle { grid-area: status; }
+  .driver-mobile-header .driver-visual-toggle { grid-area: visual; }
+  .driver-mobile-header .driver-mobile-alert { grid-area: alert; }
+  .driver-mobile-header > .driver-mobile-icon:last-child { grid-area: settings; }
 
   .driver-mobile-header .driver-visual-toggle {
     display: grid;
@@ -4451,6 +4495,21 @@ body.welcome-view {
     font-size: .55rem;
     font-weight: 900;
     line-height: 1;
+  }
+
+  .driver-mobile-header .driver-mobile-alert {
+    width: 100%;
+    min-height: 2.25rem;
+    border: 2px solid #ffd800;
+    color: #111218;
+    background: #ffd800;
+    font-size: .8rem;
+    font-weight: 1000;
+  }
+
+  .driver-mobile-header .driver-mobile-alert.button-secondary {
+    color: #ffd800;
+    background: #111218;
   }
 
   .ride-choice-grid {

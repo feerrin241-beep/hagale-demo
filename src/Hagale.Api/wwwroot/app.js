@@ -54,6 +54,7 @@ const state = {
   driverSystemAlertsEnabled: localStorage.getItem(driverSystemAlertsKey) === "true",
   visualMode: localStorage.getItem(visualModeKey) || "day",
   driverAudioContext: null,
+  driverAlertsUnlocked: false,
   lastDriverOfferAlertAt: 0,
   pwaInstallPrompt: null,
   canInstallPwa: false,
@@ -474,6 +475,19 @@ async function getDriverAudioContext() {
   return state.driverAudioContext;
 }
 
+function unlockDriverAlertsFromGesture() {
+  if (!state.profile) return;
+  if (!state.driverSoundAlertsEnabled && !state.driverVoiceAlertsEnabled) return;
+  state.driverAlertsUnlocked = true;
+  void getDriverAudioContext().catch(() => {
+    // El navegador puede mantener el audio bloqueado hasta otra interacción.
+  });
+  window.speechSynthesis?.getVoices?.();
+}
+
+window.addEventListener("pointerdown", unlockDriverAlertsFromGesture, { passive: true });
+window.addEventListener("keydown", unlockDriverAlertsFromGesture, { passive: true });
+
 async function playDriverOfferTone(force = false) {
   if (!force && !state.driverSoundAlertsEnabled) return;
   try {
@@ -517,22 +531,25 @@ function speakDriverAlert(message, force = false) {
   }
 }
 
-function notifyDriverNewOffers(newOfferCount) {
-  const message = newOfferCount === 1
-    ? "Tienes un nuevo servicio cerca."
-    : `Tienes ${newOfferCount} nuevos servicios cerca.`;
-  showNotice(message);
-  showDriverSystemNotification(newOfferCount);
-
-  const now = Date.now();
-  if (now - state.lastDriverOfferAlertAt < 3_500) return;
-  state.lastDriverOfferAlertAt = now;
-
+function announceRideNotification(message, { alert = true } = {}) {
+  showNotice(`🔔 ${message}`, false, alert);
   if (navigator.vibrate) {
     navigator.vibrate([120, 70, 120]);
   }
   void playDriverOfferTone();
-  speakDriverAlert(newOfferCount === 1 ? "Nuevo servicio cerca." : `${newOfferCount} nuevos servicios cerca.`);
+  speakDriverAlert(message);
+}
+
+function notifyDriverNewOffers(newOfferCount) {
+  const message = newOfferCount === 1
+    ? "Tienes un nuevo servicio cerca."
+    : `Tienes ${newOfferCount} nuevos servicios cerca.`;
+  const now = Date.now();
+  if (now - state.lastDriverOfferAlertAt < 3_500) return;
+  state.lastDriverOfferAlertAt = now;
+
+  announceRideNotification(message);
+  void showDriverSystemNotification(newOfferCount);
 }
 
 async function requestDriverSystemNotificationPermission() {
@@ -543,20 +560,37 @@ async function requestDriverSystemNotificationPermission() {
   return (await Notification.requestPermission()) === "granted";
 }
 
-function showDriverSystemNotification(newOfferCount) {
+async function showDriverSystemNotification(newOfferCount) {
   if (!state.driverSystemAlertsEnabled || !getDriverAlertSupport().system || Notification.permission !== "granted") return;
 
   const title = "Nuevo servicio HÁGALE";
   const body = newOfferCount === 1
     ? "Tienes una solicitud cerca. Abre el panel conductor para revisarla."
     : `Tienes ${newOfferCount} solicitudes cerca. Abre el panel conductor para revisarlas.`;
-  const notification = new Notification(title, {
+  const options = {
     body,
     tag: "hagale-driver-offers",
     icon: "/assets/hagale-icon.svg",
     badge: "/assets/hagale-icon.svg",
     requireInteraction: true
-  });
+  };
+
+  try {
+    const registration = await navigator.serviceWorker?.ready;
+    if (registration?.showNotification) {
+      await registration.showNotification(title, options);
+      return;
+    }
+  } catch {
+    // Si el service worker no está listo, usamos la notificación de la pestaña.
+  }
+
+  let notification;
+  try {
+    notification = new Notification(title, options);
+  } catch {
+    return;
+  }
   notification.onclick = () => {
     window.focus();
     state.activeMode = "Driver";
@@ -569,10 +603,20 @@ function showDriverSystemNotification(newOfferCount) {
 
 async function toggleDriverOfferAlerts() {
   const currentlyEnabled = state.driverSoundAlertsEnabled || state.driverVoiceAlertsEnabled || state.driverSystemAlertsEnabled;
+  if (currentlyEnabled && !state.driverAlertsUnlocked) {
+    state.driverAlertsUnlocked = true;
+    await playDriverOfferTone(true);
+    speakDriverAlert("Prueba de avisos HÁGALE activada. Cuando llegue un servicio sonará la alerta.", true);
+    renderDashboard();
+    showNotice("🔔 Prueba de sonido y voz activada.", false, true);
+    return;
+  }
+
   if (currentlyEnabled) {
     state.driverSoundAlertsEnabled = false;
     state.driverVoiceAlertsEnabled = false;
     state.driverSystemAlertsEnabled = false;
+    state.driverAlertsUnlocked = false;
     persistDriverAlertPreferences();
     window.speechSynthesis?.cancel();
     renderDashboard();
@@ -584,6 +628,7 @@ async function toggleDriverOfferAlerts() {
   state.driverSoundAlertsEnabled = support.sound;
   state.driverVoiceAlertsEnabled = support.voice;
   state.driverSystemAlertsEnabled = await requestDriverSystemNotificationPermission();
+  state.driverAlertsUnlocked = true;
   persistDriverAlertPreferences();
   await playDriverOfferTone(true);
   speakDriverAlert("Avisos activados. Te avisaré cuando llegue un nuevo servicio.", true);
@@ -598,8 +643,10 @@ async function toggleDriverOfferAlerts() {
 
 function renderDriverAlertButton(extraClass = "") {
   const isEnabled = state.driverSoundAlertsEnabled || state.driverVoiceAlertsEnabled || state.driverSystemAlertsEnabled;
-  const labelText = isEnabled ? "Avisos activos" : "Activar avisos";
-  return `<button class="button ${isEnabled ? "button-secondary" : "button-primary"} small driver-alert-toggle ${escapeHtml(extraClass)}" type="button" data-toggle-driver-alerts>${labelText}</button>`;
+  const labelText = isEnabled
+    ? (state.driverAlertsUnlocked ? "Avisos activos" : "Activar sonido")
+    : "Activar voz y sonido";
+  return `<button class="button ${isEnabled ? "button-secondary" : "button-primary"} small driver-alert-toggle ${escapeHtml(extraClass)}" type="button" data-toggle-driver-alerts aria-pressed="${isEnabled}" title="Activar o desactivar avisos de nuevos servicios">${labelText}</button>`;
 }
 
 function renderDriverAlertControl() {
@@ -607,13 +654,13 @@ function renderDriverAlertControl() {
   const isEnabled = state.driverSoundAlertsEnabled || state.driverVoiceAlertsEnabled || state.driverSystemAlertsEnabled;
   const detail = isEnabled
     ? `${state.driverVoiceAlertsEnabled ? "Voz" : "Voz no disponible"} · ${state.driverSoundAlertsEnabled ? "sonido activo" : "sonido no disponible"} · ${state.driverSystemAlertsEnabled ? "notificación activa" : "notificación no disponible"}`
-    : "Toca una vez para permitir sonido, voz y notificaciones en este navegador.";
+    : "Toca el botón para permitir sonido, voz y notificaciones en este navegador.";
 
   return `
     <article class="driver-alert-card ${isEnabled ? "is-active" : ""}">
       <div>
         <span class="eyebrow">Avisos de servicios</span>
-        <strong>${isEnabled ? "Listo para avisarte" : "Activa voz y sonido"}</strong>
+        <strong>${isEnabled && state.driverAlertsUnlocked ? "Listo para avisarte" : "Activa voz y sonido"}</strong>
         <p>${detail}</p>
         ${!support.voice ? '<small>La voz depende del navegador del teléfono; si no está disponible queda activo el sonido.</small>' : ""}
         ${!support.system ? '<small>Las notificaciones del sistema requieren navegador compatible y normalmente HTTPS.</small>' : ""}
@@ -723,6 +770,9 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
   }
   if (newOfferCount > 0) {
     notifyDriverNewOffers(newOfferCount);
+  }
+  if (currentRideChanged && currentRequest) {
+    announceRideNotification(`Servicio actualizado: ${label[currentRequest.status] || currentRequest.status}.`);
   }
 
   return { offerSetChanged, currentRideChanged, newOfferCount };
@@ -1708,7 +1758,7 @@ async function refreshCustomerRideTracking({ notifyJourneyChange = false } = {})
   if (tracking?.status && tracking.status !== activeRide.status) {
     renderDashboard();
     if (notifyJourneyChange) {
-      showNotice(`Estado actualizado: ${label[tracking.status] || tracking.status}.`);
+      announceRideNotification(`Estado actualizado: ${label[tracking.status] || tracking.status}.`);
     }
     return tracking;
   }
@@ -1757,7 +1807,7 @@ async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
       const message = currentOpenRide
         ? `Estado actualizado: ${label[currentOpenRide.status] || currentOpenRide.status}.`
         : "Tu servicio anterior ya no está activo.";
-      showNotice(message);
+      announceRideNotification(message);
     }
   }
 
@@ -2140,9 +2190,9 @@ function renderJourneyTimeline(rideRequest) {
     </ol>`;
 }
 
-function showNotice(message, isError = false) {
+function showNotice(message, isError = false, isAlert = false) {
   notice.textContent = message;
-  notice.className = `notice show${isError ? " error" : ""}`;
+  notice.className = `notice show${isError ? " error" : ""}${isAlert ? " alert" : ""}`;
   window.clearTimeout(showNotice.timeout);
   showNotice.timeout = window.setTimeout(() => {
     notice.className = "notice";
@@ -3013,7 +3063,8 @@ function renderDriverMobileHeader(profile, driver) {
       <button class="driver-availability-toggle ${isAvailable ? "is-available" : isBusy ? "is-busy" : ""}" type="button" data-availability="${targetAvailability}" ${canToggle ? "" : "disabled"} aria-label="Estado ${statusLabel}">
         <span class="driver-mobile-status-main"><i aria-hidden="true"></i><strong>${statusLabel}</strong></span><small>${statusDetail}</small>
       </button>
-      ${renderDriverVisualModeButton("", true)}
+       ${renderDriverVisualModeButton("", true)}
+       ${renderDriverAlertButton("driver-mobile-alert")}
       <button class="driver-mobile-icon" type="button" data-driver-nav="settings" aria-label="Abrir configuración"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 3 1.2 1.8 2.2.5 1.8-1 1.5 1.5-1 1.8.5 2.2L21 11v2l-1.8 1.2-.5 2.2 1 1.8-1.5 1.5-1.8-1-2.2.5L12 21l-1.2-1.8-2.2-.5-1.8 1-1.5-1.5 1-1.8-.5-2.2L5 13v-2l1.8-1.2.5-2.2-1-1.8L8.6 4.3l1.8 1 2.2-.5L12 3Z"/><circle cx="12" cy="12" r="2.5"/></svg></button>
     </header>`;
 }
