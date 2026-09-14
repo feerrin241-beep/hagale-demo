@@ -18,6 +18,7 @@ public sealed class IdentityAuthenticationService(
     IHostEnvironment hostEnvironment) : IAuthenticationService
 {
     private const string GoogleLoginProvider = "Google";
+    private const string DemoGoogleClientId = "134600801456-8v2l6buogvhn3kcnlun1s63ijogan761.apps.googleusercontent.com";
 
     public async Task<ApplicationResult<AuthenticatedUserDto>> RegisterAsync(RegisterUserCommand command, CancellationToken cancellationToken = default)
     {
@@ -97,7 +98,7 @@ public sealed class IdentityAuthenticationService(
 
     public ExternalAuthProviderStatusDto GetGoogleProviderStatus()
     {
-        var clientId = googleOptions.Value.ClientId?.Trim();
+        var clientId = ResolveGoogleClientId();
         return new ExternalAuthProviderStatusDto(
             GoogleLoginProvider,
             !string.IsNullOrWhiteSpace(clientId),
@@ -109,7 +110,7 @@ public sealed class IdentityAuthenticationService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
-        var clientId = googleOptions.Value.ClientId?.Trim();
+        var clientId = ResolveGoogleClientId();
         if (string.IsNullOrWhiteSpace(clientId))
         {
             return ApplicationResult<AuthenticatedUserDto>.Failure("El ingreso con Google aún no está configurado para HÁGALE.");
@@ -270,6 +271,17 @@ public sealed class IdentityAuthenticationService(
         }
 
         return "No fue posible completar el registro. Inténtalo nuevamente.";
+    }
+
+    private string? ResolveGoogleClientId()
+    {
+        var configuredClientId = googleOptions.Value.ClientId?.Trim();
+        if (!string.IsNullOrWhiteSpace(configuredClientId))
+        {
+            return configuredClientId;
+        }
+
+        return hostEnvironment.IsEnvironment("Demo") ? DemoGoogleClientId : null;
     }
 
     private static string BuildIdentityErrorMessage(IdentityResult result, string fallback)
