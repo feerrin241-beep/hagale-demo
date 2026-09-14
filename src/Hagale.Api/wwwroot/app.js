@@ -1438,11 +1438,150 @@ function getDriverInitials(driver) {
   return initials || "H";
 }
 
-function renderAssignedDriverSummary(driver) {
+function getDriverOnlineLabel(driver) {
+  if (driver?.availabilityStatus === "Busy") return "En servicio";
+  if (driver?.availabilityStatus === "Available") return "En línea";
+  return "Desconectado";
+}
+
+function renderDriverPhotoBadge(profile, driver, { compact = false } = {}) {
+  const isBusy = driver?.availabilityStatus === "Busy";
+  const isOnline = driver?.availabilityStatus === "Available";
+  const stateLabel = getDriverOnlineLabel(driver);
+  const vehicle = driver?.vehicles?.find(item => item.isActive);
+  return `
+    <div class="driver-photo-badge ${compact ? "is-compact" : ""} ${isBusy ? "is-busy" : isOnline ? "is-online" : "is-offline"}">
+      <div class="driver-photo-frame" aria-hidden="true">
+        <span class="driver-photo-helmet">●</span>
+        <strong>${escapeHtml(getDriverInitials(profile))}</strong>
+      </div>
+      <div class="driver-photo-copy">
+        <span>${escapeHtml(stateLabel)}</span>
+        <small>${vehicle ? `${escapeHtml(vehicle.brand)} ${escapeHtml(vehicle.model)}` : "Foto de conductor"}</small>
+      </div>
+    </div>`;
+}
+
+function getCustomerRideStage(status) {
+  if (status === "DriverEnRoute") {
+    return { tone: "en-route", label: "Estado actual", headline: "VOY EN CAMINO", detail: "Tu conductor ya confirmó salida hacia el punto A." };
+  }
+  if (status === "DriverArrived") {
+    return { tone: "arrived", label: "Estado actual", headline: "LLEGÓ A RECOGIDA", detail: "El conductor indicó que ya está en el punto A." };
+  }
+  if (status === "InProgress") {
+    return { tone: "in-progress", label: "Estado actual", headline: "VIAJE INICIADO", detail: "El servicio ya está avanzando hacia el destino B." };
+  }
+  return { tone: "accepted", label: "Estado actual", headline: "CONDUCTOR ASIGNADO", detail: "El conductor aceptó el servicio y pronto confirmará salida." };
+}
+
+function renderCustomerStageAlert(status) {
+  const stage = getCustomerRideStage(status);
+  return `
+    <section class="customer-stage-alert is-${escapeHtml(stage.tone)}" aria-live="polite">
+      <span>${escapeHtml(stage.label)}</span>
+      <strong>${escapeHtml(stage.headline)}</strong>
+      <p>${escapeHtml(stage.detail)}</p>
+    </section>`;
+}
+
+function getDriverJourneyStage(rideRequest) {
+  if (!rideRequest) return null;
+  const fare = formatCop(rideRequest.proposedPriceCop);
+  if (rideRequest.status === "Accepted") {
+    return {
+      tone: "accepted",
+      icon: "→",
+      label: "Servicio aceptado",
+      headline: "PREPÁRATE PARA SALIR",
+      detail: `Oferta ${fare}. Cuando arranques hacia el punto A, toca el botón grande.`,
+      action: "en-route",
+      actionLabel: "Voy en camino",
+      actionHelp: "Avisar al cliente"
+    };
+  }
+  if (rideRequest.status === "DriverEnRoute") {
+    return {
+      tone: "en-route",
+      icon: "A",
+      label: "Estado activo",
+      headline: "VOY EN CAMINO",
+      detail: "El cliente ya ve este estado. Cuando estés en el punto A, confirma llegada.",
+      action: "arrived",
+      actionLabel: "Ya llegué a recogida",
+      actionHelp: "Estoy en el punto A"
+    };
+  }
+  if (rideRequest.status === "DriverArrived") {
+    return {
+      tone: "arrived",
+      icon: "●",
+      label: "Estado activo",
+      headline: "LLEGUÉ A RECOGIDA",
+      detail: "Espera al pasajero e inicia solo cuando ya esté listo para viajar.",
+      action: "start",
+      actionLabel: "Iniciar viaje",
+      actionHelp: "Pasajero a bordo"
+    };
+  }
+  if (rideRequest.status === "InProgress") {
+    return {
+      tone: "in-progress",
+      icon: "B",
+      label: "Estado activo",
+      headline: "VIAJE INICIADO",
+      detail: "Servicio en curso. Finaliza únicamente cuando el pasajero llegue al destino.",
+      action: "complete",
+      actionLabel: "Finalizar viaje",
+      actionHelp: "Llegamos a B"
+    };
+  }
+  if (rideRequest.status === "Completed") {
+    return {
+      tone: "completed",
+      icon: "✓",
+      label: "Servicio cerrado",
+      headline: "VIAJE FINALIZADO",
+      detail: "Quedaste disponible para recibir nuevas solicitudes.",
+      action: null,
+      actionLabel: "",
+      actionHelp: ""
+    };
+  }
+  return null;
+}
+
+function renderDriverJourneyStageAlert(rideRequest, stage) {
+  if (!stage) return "";
+  return `
+    <section class="driver-stage-alert is-${escapeHtml(stage.tone)}" aria-live="polite">
+      <div class="driver-stage-icon" aria-hidden="true">${escapeHtml(stage.icon)}</div>
+      <div class="driver-stage-copy">
+        <span>${escapeHtml(stage.label)}</span>
+        <strong>${escapeHtml(stage.headline)}</strong>
+        <p>${escapeHtml(stage.detail)}</p>
+      </div>
+      <div class="driver-stage-value">
+        <span>Valor</span>
+        <strong>${formatCop(rideRequest.proposedPriceCop)}</strong>
+      </div>
+    </section>`;
+}
+
+function renderDriverJourneyActionButton(rideRequest, stage) {
+  if (!stage?.action) return "";
+  return `
+    <button class="button button-primary driver-stage-action is-${escapeHtml(stage.tone)}" type="button" data-journey-action="${escapeHtml(stage.action)}" data-journey-ride="${escapeHtml(rideRequest.id)}">
+      <span>${escapeHtml(stage.actionLabel)}</span>
+      <small>${escapeHtml(stage.actionHelp)}</small>
+    </button>`;
+}
+
+function renderAssignedDriverSummary(driver, rideStatus) {
   if (!driver) {
     return `
       <div class="customer-driver-summary is-pending" data-customer-driver-summary>
-        <div class="customer-driver-avatar" aria-hidden="true">H</div>
+        <div class="customer-driver-photo" aria-hidden="true"><div class="customer-driver-avatar">H</div><span>Asignando</span></div>
         <div class="customer-driver-summary-copy">
           <span>Conductor asignado</span>
           <strong>Preparando la ficha del servicio</strong>
@@ -1464,10 +1603,14 @@ function renderAssignedDriverSummary(driver) {
   const vehicleText = vehicleParts.length ? vehicleParts.join(" · ") : vehicleType;
   const colorText = String(driver.vehicleColor || "Color no informado").trim();
   const plateText = String(driver.vehiclePlate || "Pendiente").trim();
+  const stage = getCustomerRideStage(rideStatus);
 
   return `
-    <div class="customer-driver-summary" data-customer-driver-summary>
-      <div class="customer-driver-avatar" aria-hidden="true">${escapeHtml(getDriverInitials(driver))}</div>
+    <div class="customer-driver-summary is-${escapeHtml(stage.tone)}" data-customer-driver-summary>
+      <div class="customer-driver-photo" aria-hidden="true">
+        <div class="customer-driver-avatar">${escapeHtml(getDriverInitials(driver))}</div>
+        <span>${escapeHtml(stage.headline)}</span>
+      </div>
       <div class="customer-driver-summary-copy">
         <span>Tu conductor</span>
         <strong>${escapeHtml(fullName)}</strong>
@@ -2866,7 +3009,7 @@ function renderDriverMobileHeader(profile, driver) {
   return `
     <header class="driver-mobile-header" aria-label="Controles del conductor">
       <button class="driver-mobile-icon" type="button" data-driver-nav="account" aria-label="Abrir cuenta"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-      <div class="driver-mobile-brand"><img class="hagale-logo-image driver-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"><span class="driver-mobile-mode-title">CONDUCTOR</span></div>
+      <div class="driver-mobile-brand">${renderDriverPhotoBadge(profile, driver, { compact: true })}<span class="driver-mobile-mode-title">CONDUCTOR</span></div>
       <button class="driver-availability-toggle ${isAvailable ? "is-available" : isBusy ? "is-busy" : ""}" type="button" data-availability="${targetAvailability}" ${canToggle ? "" : "disabled"} aria-label="Estado ${statusLabel}">
         <span class="driver-mobile-status-main"><i aria-hidden="true"></i><strong>${statusLabel}</strong></span><small>${statusDetail}</small>
       </button>
@@ -2903,6 +3046,7 @@ function renderDriverCommandRail(profile, driver, modeSwitch) {
   return `
     <article id="driver-account" class="driver-identity">
       <span class="eyebrow">Socio conductor</span>
+      ${renderDriverPhotoBadge(profile, driver)}
       <h2>${escapeHtml(profile.firstName)}</h2>
       <p>${activeVehicle ? `${escapeHtml(activeVehicle.brand)} ${escapeHtml(activeVehicle.model)} · ${escapeHtml(activeVehicle.operatingCityCode)}` : "Vehículo pendiente"}</p>
       <div class="driver-live-state ${isAvailable ? "is-online" : isBusy ? "is-busy" : ""}"><span aria-hidden="true"></span>${serviceState}</div>
@@ -3000,16 +3144,9 @@ async function refreshDriverAccess() {
 function renderDriverRideRequestsPanel() {
   const currentRequest = state.driverCurrentRideRequest;
   if (currentRequest) {
+    const journeyStage = getDriverJourneyStage(currentRequest);
     const journeyGuidance = renderDriverJourneyGuidance(currentRequest);
-    const journeyAction = currentRequest.status === "Accepted"
-      ? `<button class="button button-primary" type="button" data-journey-action="en-route" data-journey-ride="${currentRequest.id}">Voy en camino</button>`
-      : currentRequest.status === "DriverEnRoute"
-        ? `<button class="button button-primary" type="button" data-journey-action="arrived" data-journey-ride="${currentRequest.id}">Ya llegué a recogida</button>`
-        : currentRequest.status === "DriverArrived"
-          ? `<button class="button button-primary" type="button" data-journey-action="start" data-journey-ride="${currentRequest.id}">Iniciar viaje</button>`
-          : currentRequest.status === "InProgress"
-            ? `<button class="button button-primary" type="button" data-journey-action="complete" data-journey-ride="${currentRequest.id}">Finalizar viaje</button>`
-            : "";
+    const journeyAction = renderDriverJourneyActionButton(currentRequest, journeyStage);
     const journeyDescription = currentRequest.status === "Accepted"
       ? "Confirma cuando estés desplazándote hacia el punto de recogida."
       : currentRequest.status === "DriverEnRoute"
@@ -3026,6 +3163,7 @@ function renderDriverRideRequestsPanel() {
     return `
       <article id="driver-requests" class="driver-active-card driver-active-journey-card" data-reveal>
         <div class="driver-active-heading"><div><span class="eyebrow">Servicio asignado</span><h2>${currentRequest.status === "Completed" ? "Servicio finalizado" : "Tu recorrido actual"}</h2><p>${journeyDescription}</p></div>${statusBadge(currentRequest.status)}</div>
+        ${renderDriverJourneyStageAlert(currentRequest, journeyStage)}
         <div class="driver-route-card">
           <div class="route-stop route-stop-pickup"><span>RECOGIDA · A</span><strong>${escapeHtml(currentRequest.pickupAddress)}</strong></div>
           <div class="route-connector" aria-hidden="true"></div>
@@ -3180,7 +3318,8 @@ function renderCustomerRideTrackingPanel() {
     <article id="customer-ride-tracking" class="card customer-tracking-card" data-reveal>
       <div class="customer-tracking-brand"><img class="hagale-logo-image tracking-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"><small>Seguimiento del servicio</small></div>
       <div class="section-title"><div><span class="eyebrow">Servicio activo</span><h2>${statusLabel}</h2><p class="muted" data-customer-tracking-status>${customerTrackingMessage(rideRequest, tracking)}</p></div>${statusBadge(status)}</div>
-      ${renderAssignedDriverSummary(tracking?.driver)}
+      ${renderCustomerStageAlert(status)}
+      ${renderAssignedDriverSummary(tracking?.driver, status)}
       ${renderCustomerTripGlance(rideRequest, tracking)}
       <div class="customer-tracking-route"><div><span class="route-letter route-letter-a">A</span><p><small>Recogida</small><strong>${escapeHtml(rideRequest.pickupAddress)}</strong></p></div><div><span class="route-letter route-letter-b">B</span><p><small>Destino</small><strong>${escapeHtml(rideRequest.destinationAddress)}</strong></p></div></div>
       <div class="customer-tracking-map-frame"><div class="customer-tracking-map driver-map-canvas" data-customer-ride-map aria-label="Mapa del servicio activo">${hasDriverLocation ? "" : '<div class="customer-tracking-map-wait"><strong>Esperando GPS del conductor</strong><span>La moto aparecerá aquí cuando el conductor active la ubicación para este servicio.</span></div>'}</div></div>
