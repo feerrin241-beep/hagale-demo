@@ -2326,12 +2326,6 @@ function bindAuthUtilities() {
     button.addEventListener("click", () => {
       const emailTarget = button.dataset.emailTarget;
       const emailInput = emailTarget ? document.querySelector(emailTarget) : null;
-      if (emailInput && !emailInput.value.trim()) {
-        emailInput.focus();
-        showNotice("Escribe tu correo para preparar la recuperación.");
-        return;
-      }
-
       setAuthForm("forgot", { email: emailInput?.value || "" });
     });
   });
@@ -2367,10 +2361,12 @@ function setAuthForm(mode, options = {}) {
           <button class="button button-primary" type="submit">Actualizar contraseña</button>
           <button class="button button-secondary" type="button" data-auth-mode="login">Volver a ingresar</button>
         </div>
-      </form>`;
+    </form>`;
     document.querySelector("#password-recovery-form").addEventListener("submit", handlePasswordRecovery);
     container.querySelector("[data-auth-mode='login']")?.addEventListener("click", () => setAuthForm("login"));
     bindAuthUtilities();
+    const recoveryEmail = document.querySelector("#recovery-email");
+    if (recoveryEmail && !recoveryEmail.value.trim()) recoveryEmail.focus();
     return;
   }
 
