@@ -2640,7 +2640,7 @@ function renderCustomerAppHeader(profile, hasDriverRole, isAdministrator) {
       <a class="customer-mobile-brand" href="/" aria-label="HÁGALE, inicio"><img class="hagale-logo-image customer-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"></a>
       <div class="customer-app-actions">
         ${renderInstallAppButton("customer-install-button")}
-        ${hasDriverRole ? '<button class="button button-secondary small" type="button" data-set-mode="Driver">Conductor</button>' : ""}
+        ${hasDriverRole ? '<button class="button customer-mode-entry" type="button" data-set-mode="Driver"><span>Modo</span><strong>Conductor</strong></button>' : ""}
         ${isAdministrator ? '<button class="button button-secondary small" type="button" data-customer-nav="admin">Admin</button>' : ""}
         <button class="button button-secondary small" type="button" data-customer-nav="profile">${escapeHtml(profile.firstName)}</button>
         <button class="button button-quiet small" type="button" data-sign-out>Salir</button>
@@ -2652,10 +2652,23 @@ function renderCustomerPanelNav(items, activePanel) {
   return `
     <nav class="customer-panel-nav" aria-label="Paneles de HÁGALE">
       ${items.map(item => item.mode
-        ? `<button class="customer-panel-tab customer-panel-switch" type="button" data-set-mode="${item.mode}"><span>${escapeHtml(item.label)}</span><small>${escapeHtml(item.meta)}</small></button>`
+        ? `<button class="customer-panel-tab customer-panel-switch" type="button" data-set-mode="${item.mode}"><span>${escapeHtml(item.label)}</span><small>Entrar al despacho →</small></button>`
         : `<button class="customer-panel-tab ${activePanel === item.id ? "is-active" : ""}" type="button" data-customer-nav="${item.id}" aria-current="${activePanel === item.id ? "page" : "false"}"><span>${escapeHtml(item.label)}</span><small>${escapeHtml(item.meta)}</small></button>`
       ).join("")}
     </nav>`;
+}
+
+function renderModeSwitchControl(isDriverMode, compact = false) {
+  return `
+    <div class="mode-switch-app ${isDriverMode ? "is-driver" : "is-customer"} ${compact ? "is-compact" : ""}" aria-label="Cambio de modo">
+      <div>
+        <span>Modo actual</span>
+        <strong>${isDriverMode ? "CONDUCTOR" : "CLIENTE"}</strong>
+      </div>
+      <button class="button mode-switch-button" type="button" data-set-mode="${isDriverMode ? "Customer" : "Driver"}">
+        ${isDriverMode ? "Cambiar a Cliente" : "Cambiar a Conductor"}
+      </button>
+    </div>`;
 }
 
 function renderCustomerPanelContent(panel, profile, driver, accountSummary, isAdministrator) {
@@ -2733,11 +2746,9 @@ function renderDashboard() {
   const visibleDriverOfferCount = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id)).length;
   const hasActiveCustomerRide = Boolean(getActiveCustomerRide());
   const modeHero = isDriverMode
-    ? `<article class="mode-hero mode-hero-driver"><div><img class="hagale-logo-image mode-hero-logo" src="/assets/hagale-logo-black.png" alt="HÁGALE"><span class="eyebrow">Panel operativo · conductor</span><h1>Tu jornada, bajo control.</h1><p>Activa tu disponibilidad, revisa las ofertas cercanas y avanza cada servicio paso a paso.</p><div class="driver-hero-actions"><button class="button button-secondary small driver-hero-return" type="button" data-set-mode="Customer">Ir a modo cliente</button>${renderDriverVisualModeButton("driver-hero-visual")}${renderDriverAlertButton("driver-hero-alert")}${renderInstallAppButton("driver-hero-install")}</div></div><div class="mode-kpis"><div><strong>${driver?.availabilityStatus === "Available" ? "En línea" : "Offline"}</strong><span>Disponibilidad</span></div><div><strong>${visibleDriverOfferCount}</strong><span>Ofertas nuevas</span></div></div></article>`
+    ? `<article class="mode-hero mode-hero-driver"><div><img class="hagale-logo-image mode-hero-logo" src="/assets/hagale-logo-black.png" alt="HÁGALE"><span class="eyebrow">MODO CONDUCTOR</span><h1>Recibe servicios y decide rápido.</h1><p>Este es tu panel de trabajo: disponibilidad, ofertas tipo despacho y avance del viaje paso a paso.</p><div class="driver-hero-actions"><button class="button button-secondary small driver-hero-return" type="button" data-set-mode="Customer">Ir a modo cliente</button>${renderDriverVisualModeButton("driver-hero-visual")}${renderDriverAlertButton("driver-hero-alert")}${renderInstallAppButton("driver-hero-install")}</div></div><div class="mode-kpis"><div><strong>${driver?.availabilityStatus === "Available" ? "En línea" : "Offline"}</strong><span>Disponibilidad</span></div><div><strong>${visibleDriverOfferCount}</strong><span>Ofertas nuevas</span></div></div></article>`
     : `<article class="mode-hero mode-hero-customer" data-reveal><div><img class="hagale-logo-image mode-hero-logo" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"><span class="eyebrow">Cliente</span><h1>Tu moto, tu precio.</h1><p>Define origen, destino y tu oferta. Si compartes A y B, verás una referencia por distancia directa antes de pedir la moto.</p></div><div class="mode-kpis"><div><strong>${escapeHtml(customerServiceStatus)}</strong><span>Estado actual</span></div><div><strong>${hasCustomerPricing ? "Moto" : "—"}</strong><span>${hasCustomerPricing ? "Servicio disponible" : "Tarifa pendiente"}</span></div></div></article>`;
-  const modeSwitch = hasDriverRole
-    ? `<div class="mode-switch"><span class="small-text">Modo actual: <strong>${isDriverMode ? "Conductor" : "Cliente"}</strong></span><button class="button button-secondary small" type="button" data-set-mode="${isDriverMode ? "Customer" : "Driver"}">${isDriverMode ? "Ir a modo cliente" : "Cambiar a conductor"}</button></div>`
-    : "";
+  const modeSwitch = hasDriverRole ? renderModeSwitchControl(isDriverMode) : "";
 
   const accountSummary = `
     <article class="card card-dark account-summary">
@@ -2855,7 +2866,7 @@ function renderDriverMobileHeader(profile, driver) {
   return `
     <header class="driver-mobile-header" aria-label="Controles del conductor">
       <button class="driver-mobile-icon" type="button" data-driver-nav="account" aria-label="Abrir cuenta"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-      <div class="driver-mobile-brand"><img class="hagale-logo-image driver-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"></div>
+      <div class="driver-mobile-brand"><img class="hagale-logo-image driver-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"><span class="driver-mobile-mode-title">CONDUCTOR</span></div>
       <button class="driver-availability-toggle ${isAvailable ? "is-available" : isBusy ? "is-busy" : ""}" type="button" data-availability="${targetAvailability}" ${canToggle ? "" : "disabled"} aria-label="Estado ${statusLabel}">
         <span class="driver-mobile-status-main"><i aria-hidden="true"></i><strong>${statusLabel}</strong></span><small>${statusDetail}</small>
       </button>
@@ -2918,7 +2929,7 @@ function renderDriverCommandRail(profile, driver, modeSwitch) {
       <strong>${activeVehicle?.isActive ? "Activa" : "Pendiente"}</strong>
     </article>
     <div class="driver-rail-actions">
-      ${modeSwitch}
+      ${modeSwitch ? renderModeSwitchControl(true, true) : ""}
       <button class="button button-secondary" type="button" data-sign-out>Cerrar sesión</button>
     </div>
     <details class="driver-account-details">
@@ -3037,9 +3048,13 @@ function renderDriverRideRequestsPanel() {
   const offerList = offers.length
     ? offers.map(offer => `
       <li class="driver-request-row ${offer.id === state.selectedDriverOfferId ? "is-selected" : ""}" data-view-driver-offer="${offer.id}" tabindex="0" role="button" aria-label="Ver solicitud de ${escapeHtml(offer.pickupAddress)}">
-        <div class="driver-request-avatar" aria-hidden="true">${escapeHtml(getRequestInitials(offer))}</div>
+        <div class="driver-request-priceblock">
+          <span>Nueva solicitud</span>
+          <strong class="driver-request-price">${formatCop(offer.proposedPriceCop)}</strong>
+          <small>${escapeHtml(getRidePaymentMethodLabel(offer))}</small>
+        </div>
         <div class="driver-request-main">
-          <div class="driver-request-top"><span class="driver-request-distance">${formatPickupProximity(offer.pickupDistanceKilometers)}</span><strong class="driver-request-price">${formatCop(offer.proposedPriceCop)}</strong></div>
+          <div class="driver-request-top"><span class="driver-request-distance">${formatPickupProximity(offer.pickupDistanceKilometers)}</span><span class="driver-request-pulse">Toca para ver detalles</span></div>
           <h3>${escapeHtml(offer.pickupAddress)}</h3>
           <p>${escapeHtml(offer.destinationAddress)}</p>
           <div class="driver-request-tags"><span>${escapeHtml(label[offer.serviceType] || offer.serviceType)}</span><span>${escapeHtml(offer.operatingCityCode)}</span>${ridePreferenceTagSpans(offer)}${offer.pickupDistanceKilometers === null || offer.pickupDistanceKilometers === undefined ? '<span>Sin GPS del pasajero</span>' : ""}</div>
@@ -3060,7 +3075,7 @@ function renderDriverRideRequestsPanel() {
 function renderDriverOfferSheet(offer) {
   return `
     <section class="driver-request-sheet" aria-label="Detalle de la solicitud seleccionada">
-      <div class="driver-sheet-heading"><div><span class="eyebrow">Solicitud seleccionada</span><h3>${formatPickupProximity(offer.pickupDistanceKilometers)} · ${formatCop(offer.proposedPriceCop)}</h3></div><button class="button button-quiet" type="button" data-close-driver-offer>Cerrar</button></div>
+      <div class="driver-sheet-heading"><div><span class="eyebrow">Solicitud seleccionada</span><h3><span>Gana</span><strong>${formatCop(offer.proposedPriceCop)}</strong></h3><p>${formatPickupProximity(offer.pickupDistanceKilometers)} · ${escapeHtml(getRidePaymentMethodLabel(offer))}</p></div><button class="button button-quiet" type="button" data-close-driver-offer>Cerrar</button></div>
       ${renderDriverMap(state.application)}
       <div class="driver-sheet-route"><div><span class="route-letter route-letter-a">A</span><p><small>Recogida</small><strong>${escapeHtml(offer.pickupAddress)}</strong></p></div><div><span class="route-letter route-letter-b">B</span><p><small>Destino</small><strong>${escapeHtml(offer.destinationAddress)}</strong></p></div></div>
       <div class="driver-sheet-metrics" aria-label="Resumen de distancias de la solicitud">
