@@ -1182,6 +1182,114 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); outline: 2
 .driver-wallet-card { border-top: 5px solid #ffd800; background: linear-gradient(135deg, #fffdf3, #fff); }
 .performance-mark,
 .wallet-mark { display: grid; place-items: center; width: 2.45rem; height: 2.45rem; border-radius: 50%; color: #111218; background: #ffd800; font-size: 1.35rem; font-weight: 900; }
+.driver-growth-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(9rem, auto);
+  gap: .9rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 2px solid #111218;
+  border-radius: 1rem;
+  color: #111218;
+  background:
+    radial-gradient(circle at 100% 0, rgba(255,216,0,.36), transparent 8rem),
+    #fff;
+}
+.driver-growth-card.level-gold { border-color: #9b7200; background: linear-gradient(135deg, #fff1a6, #fff); }
+.driver-growth-card.level-silver { border-color: #848991; background: linear-gradient(135deg, #f1f3f5, #fff); }
+.driver-growth-card.level-bronze { border-color: #8d5b24; background: linear-gradient(135deg, #ffe2bf, #fff); }
+.driver-level-medal {
+  display: grid;
+  place-items: center;
+  width: 4.2rem;
+  height: 4.2rem;
+  border: 3px solid #111218;
+  border-radius: 50%;
+  background: #ffd800;
+  box-shadow: 0 .45rem 0 rgba(0,0,0,.12);
+}
+.driver-level-medal span { font-size: 2rem; font-weight: 1000; }
+.driver-growth-main { display: grid; gap: .18rem; min-width: 0; }
+.driver-growth-main h3 { margin: 0; color: #111218; font-size: clamp(1.35rem, 4vw, 2rem); }
+.driver-growth-main p { margin: 0; color: #383940; font-size: .88rem; line-height: 1.35; }
+.driver-growth-main small { color: #5a5b62; font-size: .74rem; font-weight: 750; line-height: 1.35; }
+.driver-level-progress {
+  height: .55rem;
+  margin: .35rem 0 .15rem;
+  overflow: hidden;
+  border: 1px solid #111218;
+  border-radius: 999px;
+  background: rgba(17,18,24,.12);
+}
+.driver-level-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #111218;
+}
+.driver-commission-card {
+  display: grid;
+  justify-items: end;
+  gap: .14rem;
+  padding: .8rem;
+  border-radius: .8rem;
+  color: #ffd800;
+  background: #111218;
+  text-align: right;
+}
+.driver-commission-card strong { font-size: 1.45rem; line-height: 1; }
+.driver-commission-card span { color: #fff; font-size: .72rem; font-weight: 950; letter-spacing: .08em; text-transform: uppercase; }
+.driver-commission-card p { max-width: 15rem; margin: 0; color: #f2f2ed; font-size: .72rem; line-height: 1.3; }
+.driver-day-card,
+.driver-rating-card {
+  display: grid;
+  gap: .55rem;
+  margin-top: .9rem;
+  padding: 1rem;
+  border: 1px solid #d5d5cc;
+  border-radius: .9rem;
+  background: #fffdf3;
+}
+.driver-day-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.driver-day-card h3,
+.driver-rating-card h3 { margin: 0; color: #111218; }
+.driver-day-card p,
+.driver-rating-card p { margin: .15rem 0 0; color: #5d5e65; font-size: .84rem; line-height: 1.35; }
+.driver-day-card > strong {
+  color: #111218;
+  font-size: clamp(1.45rem, 5vw, 2.25rem);
+  font-weight: 1000;
+  letter-spacing: -.06em;
+  white-space: nowrap;
+}
+.driver-day-card > small {
+  grid-column: 1 / -1;
+  color: #6b6c73;
+  font-size: .72rem;
+  font-weight: 750;
+}
+.driver-rating-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.rating-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(6rem, 1fr));
+  gap: .5rem;
+}
+.rating-preview-grid div {
+  display: grid;
+  gap: .12rem;
+  padding: .7rem;
+  border-radius: .7rem;
+  background: #111218;
+}
+.rating-preview-grid strong { color: #ffd800; font-size: 1.25rem; }
+.rating-preview-grid span { color: #fff; font-size: .7rem; font-weight: 850; }
 .performance-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; margin-top: 1rem; }
 .performance-metrics > div { display: grid; gap: .18rem; min-width: 0; padding: .8rem; border-radius: .7rem; background: #f3f3ef; }
 .performance-metrics strong { color: #111218; font-size: 1.2rem; overflow-wrap: anywhere; }
@@ -2114,6 +2222,65 @@ body.welcome-view {
 
 .customer-request-card > .eyebrow { color: #6f5a00; }
 .customer-request-card > h2 { font-size: clamp(1.55rem, 3vw, 2.15rem); }
+.customer-launch-offer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: .85rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 2px solid #111218;
+  border-radius: 1rem;
+  color: #111218;
+  background:
+    radial-gradient(circle at 100% 0, rgba(255,216,0,.38), transparent 7rem),
+    #fff7bf;
+}
+.launch-offer-badge {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  width: 5.4rem;
+  height: 5.4rem;
+  border: 3px solid #111218;
+  border-radius: 50%;
+  color: #ffd800;
+  background: #111218;
+  box-shadow: 0 .5rem 0 rgba(0,0,0,.16);
+  text-align: center;
+}
+.launch-offer-badge strong {
+  font-size: 1.65rem;
+  font-weight: 1000;
+  line-height: 1;
+}
+.launch-offer-badge span {
+  max-width: 4.2rem;
+  color: #fff;
+  font-size: .58rem;
+  font-weight: 950;
+  line-height: 1.05;
+  text-transform: uppercase;
+}
+.customer-launch-offer h3 {
+  margin: .05rem 0 .2rem;
+  color: #111218;
+  font-size: clamp(1.18rem, 4vw, 1.6rem);
+}
+.customer-launch-offer p {
+  margin: 0;
+  color: #35363c;
+  font-size: .88rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.customer-launch-offer small {
+  display: block;
+  margin-top: .35rem;
+  color: #5a5b62;
+  font-size: .72rem;
+  font-weight: 800;
+}
 
 .customer-ride-form {
   align-items: start;
@@ -4379,6 +4546,39 @@ body.welcome-view {
 
   .customer-driver-plate {
     grid-column: 2;
+  }
+
+  .driver-growth-card,
+  .driver-day-card,
+  .driver-rating-card,
+  .customer-launch-offer {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .driver-level-medal,
+  .launch-offer-badge {
+    width: 4.4rem;
+    height: 4.4rem;
+  }
+
+  .driver-commission-card {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .driver-day-card > strong {
+    white-space: normal;
+  }
+
+  .rating-preview-grid {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .performance-metrics,
+  .wallet-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

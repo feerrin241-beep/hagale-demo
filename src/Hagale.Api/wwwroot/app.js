@@ -3230,20 +3230,100 @@ function renderDriverOfferSheet(offer) {
     </section>`;
 }
 
+function getDriverRecognition(summary = {}) {
+  const rides = Number(summary.completedRideCount) || 0;
+  const value = Number(summary.completedServiceValueCop) || 0;
+  const distance = Number(summary.completedDirectDistanceKilometers) || 0;
+  const score = rides * 10 + Math.floor(value / 20_000) + Math.floor(distance / 5);
+  const levels = [
+    { name: "Bronce", className: "bronze", min: 0, next: 60, benefit: "Base de confianza: historial visible y prioridad normal." },
+    { name: "Plata", className: "silver", min: 60, next: 180, benefit: "Más visibilidad en solicitudes y distintivo de confianza." },
+    { name: "Oro", className: "gold", min: 180, next: null, benefit: "Máximo reconocimiento, prioridad alta y beneficios comerciales." }
+  ];
+  const current = score >= 180 ? levels[2] : score >= 60 ? levels[1] : levels[0];
+  const nextLevel = current.next === null ? null : levels.find(level => level.min === current.next);
+  const progress = current.next === null
+    ? 100
+    : Math.max(0, Math.min(100, Math.round(((score - current.min) / (current.next - current.min)) * 100)));
+  return { ...current, score, progress, nextLevel };
+}
+
+function getDriverCommissionLaunch(driver) {
+  const startValue = driver?.approvedAtUtc || driver?.appliedAtUtc;
+  if (!startValue) {
+    return { daysUsed: 0, daysLeft: 30, status: "Primer mes sin comisión listo para activar al aprobarse." };
+  }
+  const elapsedDays = Math.max(0, Math.floor((Date.now() - new Date(startValue).getTime()) / 86_400_000));
+  const daysLeft = Math.max(0, 30 - elapsedDays);
+  return {
+    daysUsed: Math.min(30, elapsedDays),
+    daysLeft,
+    status: daysLeft > 0
+      ? `${daysLeft} día${daysLeft === 1 ? "" : "s"} de lanzamiento sin comisión.`
+      : "Periodo de lanzamiento finalizado; comisión pendiente por configurar."
+  };
+}
+
+function renderDriverRecognitionPanel(summary, driver) {
+  const recognition = getDriverRecognition(summary);
+  const commission = getDriverCommissionLaunch(driver);
+  const nextText = recognition.nextLevel
+    ? `Te faltan ${Math.max(0, recognition.next - recognition.score)} puntos para llegar a ${recognition.nextLevel.name}.`
+    : "Estás en el nivel máximo de reconocimiento.";
+  return `
+    <section class="driver-growth-card level-${escapeHtml(recognition.className)}">
+      <div class="driver-level-medal">
+        <span>${escapeHtml(recognition.name[0])}</span>
+      </div>
+      <div class="driver-growth-main">
+        <span class="eyebrow">Reconocimiento HÁGALE</span>
+        <h3>Nivel ${escapeHtml(recognition.name)}</h3>
+        <p>${escapeHtml(recognition.benefit)}</p>
+        <div class="driver-level-progress" aria-label="Progreso del nivel"><i style="width: ${recognition.progress}%"></i></div>
+        <small>${escapeHtml(nextText)} Puntaje demo: ${recognition.score}.</small>
+      </div>
+      <div class="driver-commission-card">
+        <strong>0% comisión</strong>
+        <span>Primer mes</span>
+        <p>${escapeHtml(commission.status)}</p>
+      </div>
+    </section>`;
+}
+
+function renderDriverRatingsPreview() {
+  return `
+    <section class="driver-rating-card">
+      <div><span class="eyebrow">Calificaciones</span><h3>Reputación compartida</h3><p>La siguiente fase permitirá que cliente y conductor se califiquen al finalizar el servicio.</p></div>
+      <div class="rating-preview-grid">
+        <div><strong>★ —</strong><span>Como conductor</span></div>
+        <div><strong>★ —</strong><span>Clientes atendidos</span></div>
+      </div>
+    </section>`;
+}
+
 function renderDriverPerformancePanel() {
   const summary = state.driverActivitySummary || {};
   const completedRideCount = Number(summary.completedRideCount) || 0;
   const completedValue = Number(summary.completedServiceValueCop) || 0;
   const waitingValue = Number(summary.completedWaitingChargeCop) || 0;
   const directDistance = summary.completedDirectDistanceKilometers;
+  const estimatedTodayNet = completedValue + waitingValue;
   return `
     <article id="driver-performance" class="card driver-performance-card">
-      <div class="section-title"><div><span class="eyebrow">Desempeño</span><h2>Tu actividad real</h2><p class="muted">Resumen de servicios finalizados en HÁGALE. No es una calificación ni una promesa de ingresos.</p></div><span class="performance-mark" aria-hidden="true">↗</span></div>
+      <div class="section-title"><div><span class="eyebrow">Mi día · desempeño</span><h2>Tu actividad real</h2><p class="muted">Resumen operativo de servicios finalizados, valores y kilómetros directos registrados.</p></div><span class="performance-mark" aria-hidden="true">↗</span></div>
+      ${renderDriverRecognitionPanel(summary, state.application)}
+      <section class="driver-day-card">
+        <div><span class="eyebrow">Cierre rápido</span><h3>Hoy en HÁGALE</h3><p>Este panel será el reporte diario del conductor: carreras, kilómetros, pagos y calificación.</p></div>
+        <strong>${formatCop(estimatedTodayNet)}</strong>
+        <small>Valor finalizado + espera registrada. Demo acumulada hasta conectar corte diario real.</small>
+      </section>
       <div class="performance-metrics">
         <div><strong>${completedRideCount}</strong><span>Servicios finalizados</span></div>
         <div><strong>${formatCop(completedValue)}</strong><span>Valor finalizado</span></div>
         <div><strong>${directDistance == null ? "—" : formatDistance(directDistance)}</strong><span>Distancia directa registrada</span></div>
+        <div><strong>${formatCop(waitingValue)}</strong><span>Espera adicional registrada</span></div>
       </div>
+      ${renderDriverRatingsPreview()}
       <p class="small-text muted">${summary.lastCompletedAtUtc ? `Último servicio finalizado: ${formatDateTime(summary.lastCompletedAtUtc)}. Espera adicional acumulada: ${formatCop(waitingValue)}.` : "Cuando completes tu primer servicio, aparecerá aquí."}</p>
     </article>`;
 }
@@ -3421,6 +3501,25 @@ function renderCustomerRideHistoryPanel() {
     </article>`;
 }
 
+function renderCustomerLaunchOfferPanel() {
+  const completedCount = (state.rideRequests || []).filter(rideRequest => rideRequest.status === "Completed").length;
+  const pendingOrActiveCount = (state.rideRequests || []).filter(rideRequest => openCustomerRideStatuses.has(rideRequest.status)).length;
+  const isFirstRideCandidate = completedCount === 0;
+  return `
+    <section class="customer-launch-offer ${isFirstRideCandidate ? "is-first-ride" : ""}">
+      <div class="launch-offer-badge">
+        <strong>${isFirstRideCandidate ? "50%" : "Bono"}</strong>
+        <span>${isFirstRideCandidate ? "Primera carrera" : "Referidos"}</span>
+      </div>
+      <div>
+        <span class="eyebrow">Campaña de lanzamiento</span>
+        <h3>${isFirstRideCandidate ? "Bono bienvenida para motivar instalación" : "Trae un amigo y gana beneficios"}</h3>
+        <p>${isFirstRideCandidate ? "Propuesta comercial: primera carrera con bono de hasta 50%. En esta demo se muestra como campaña, todavía no descuenta automáticamente." : "La fase de producción puede activar bonos por referidos, viajes frecuentes y zonas de lanzamiento."}</p>
+        <small>${pendingOrActiveCount > 0 ? "Tienes una solicitud activa; el bono se revisaría al cerrar el servicio." : "Listo para probarlo en una nueva solicitud de muestra."}</small>
+      </div>
+    </section>`;
+}
+
 function renderRideRequestPanel() {
   const openRequest = getOpenCustomerRideRequest();
   const activePricingRules = (state.pricingRules || []).filter(rule => rule.isActive);
@@ -3470,6 +3569,7 @@ function renderRideRequestPanel() {
       <span class="eyebrow">HÁGALE · solicitar moto</span>
       <h2>${openRequest ? "Tu solicitud actual" : "Solicita tu recorrido"}</h2>
       <p class="muted">${openRequest ? "Revisa y administra el servicio en curso. Para evitar solicitudes duplicadas, el nuevo recorrido se habilita cuando este se cierre." : "Marca origen y destino, revisa tu oferta y pide una moto. Cuando haya asignación podrás seguir los estados y la última ubicación compartida durante el servicio."}</p>
+      ${renderCustomerLaunchOfferPanel()}
       ${requestForm}
       <div class="customer-request-footer"><button class="button button-secondary small" type="button" data-customer-nav="history">Ver historial completo</button><span>El historial está separado para que pedir una moto sea un panel limpio.</span></div>
     </article>`;
