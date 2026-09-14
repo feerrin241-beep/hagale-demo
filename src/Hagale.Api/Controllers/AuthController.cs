@@ -39,6 +39,23 @@ public sealed class AuthController(IAuthenticationService authenticationService)
     }
 
     [AllowAnonymous]
+    [HttpPost("demo-reset-password")]
+    [ProducesResponseType<AuthenticatedUserDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AuthenticatedUserDto>> ResetPasswordForDemo(
+        DemoResetPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await authenticationService.ResetPasswordForDemoAsync(
+            new DemoResetPasswordCommand(request.Email, request.Password),
+            cancellationToken);
+
+        return result.IsSuccess
+            ? Ok(result.Value)
+            : this.BusinessRuleViolation("passwordRecovery", result.Error!);
+    }
+
+    [AllowAnonymous]
     [HttpGet("google/status")]
     [ProducesResponseType<ExternalAuthProviderStatusDto>(StatusCodes.Status200OK)]
     public ActionResult<ExternalAuthProviderStatusDto> GetGoogleStatus() =>
@@ -84,6 +101,10 @@ public sealed record RegisterRequest(
 public sealed record LoginRequest(
     [Required, EmailAddress, StringLength(256)] string Email,
     [Required, StringLength(128, MinimumLength = 1)] string Password);
+
+public sealed record DemoResetPasswordRequest(
+    [Required, EmailAddress, StringLength(256)] string Email,
+    [Required, StringLength(128, MinimumLength = 12)] string Password);
 
 public sealed record GoogleSignInRequest(
     [Required, StringLength(4096, MinimumLength = 20)] string Credential);

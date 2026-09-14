@@ -11,6 +11,8 @@ public sealed record RegisterUserCommand(
 
 public sealed record LoginCommand(string Email, string Password);
 
+public sealed record DemoResetPasswordCommand(string Email, string Password);
+
 public sealed record GoogleSignInCommand(string Credential);
 
 public sealed record ExternalAuthProviderStatusDto(
@@ -31,6 +33,7 @@ public interface IAuthenticationService
 {
     Task<ApplicationResult<AuthenticatedUserDto>> RegisterAsync(RegisterUserCommand command, CancellationToken cancellationToken = default);
     Task<ApplicationResult<AuthenticatedUserDto>> LoginAsync(LoginCommand command, CancellationToken cancellationToken = default);
+    Task<ApplicationResult<AuthenticatedUserDto>> ResetPasswordForDemoAsync(DemoResetPasswordCommand command, CancellationToken cancellationToken = default);
     ExternalAuthProviderStatusDto GetGoogleProviderStatus();
     Task<ApplicationResult<AuthenticatedUserDto>> SignInWithGoogleAsync(GoogleSignInCommand command, CancellationToken cancellationToken = default);
     Task<ApplicationResult<AuthenticatedUserDto>> RenewCurrentSessionAsync(Guid userId, CancellationToken cancellationToken = default);

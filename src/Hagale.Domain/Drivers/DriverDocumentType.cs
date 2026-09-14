@@ -7,5 +7,6 @@ public enum DriverDocumentType
     VehicleRegistration = 3,
     Insurance = 4,
     Roadworthiness = 5,
+    SelfieVerification = 6,
     Other = 99
 }

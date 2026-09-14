@@ -79,9 +79,14 @@ public sealed class IdentityAuthenticationService(
     {
         ArgumentNullException.ThrowIfNull(command);
         var user = await userManager.FindByEmailAsync(command.Email.Trim());
-        if (user is null || !user.IsActive || await userManager.IsLockedOutAsync(user))
+        if (user is null || !user.IsActive)
         {
             return ApplicationResult<AuthenticatedUserDto>.Failure("Correo o contraseña incorrectos.");
+        }
+
+        if (await userManager.IsLockedOutAsync(user))
+        {
+            return ApplicationResult<AuthenticatedUserDto>.Failure("La cuenta quedó bloqueada temporalmente por varios intentos. Usa “Olvidaste tu contraseña” o espera unos minutos.");
         }
 
         if (!await userManager.CheckPasswordAsync(user, command.Password))
@@ -93,6 +98,57 @@ public sealed class IdentityAuthenticationService(
         await userManager.ResetAccessFailedCountAsync(user);
         user.LastActivityAtUtc = timeProvider.GetUtcNow();
         await userManager.UpdateAsync(user);
+        return ApplicationResult<AuthenticatedUserDto>.Success(await CreateAuthenticatedUserAsync(user, cancellationToken));
+    }
+
+    public async Task<ApplicationResult<AuthenticatedUserDto>> ResetPasswordForDemoAsync(
+        DemoResetPasswordCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        if (!hostEnvironment.IsDevelopment() && !hostEnvironment.IsEnvironment("Demo"))
+        {
+            return ApplicationResult<AuthenticatedUserDto>.Failure("La recuperación por correo real aún no está conectada.");
+        }
+
+        var user = await userManager.FindByEmailAsync(command.Email.Trim());
+        if (user is null || !user.IsActive)
+        {
+            return ApplicationResult<AuthenticatedUserDto>.Failure("No encontramos ese correo en esta sesión de demo. Crea la cuenta nuevamente.");
+        }
+
+        var hasPassword = await userManager.HasPasswordAsync(user);
+        if (hasPassword)
+        {
+            var removeResult = await userManager.RemovePasswordAsync(user);
+            if (!removeResult.Succeeded)
+            {
+                return ApplicationResult<AuthenticatedUserDto>.Failure(BuildIdentityErrorMessage(
+                    removeResult,
+                    "No fue posible preparar el cambio de contraseña."));
+            }
+        }
+
+        var addResult = await userManager.AddPasswordAsync(user, command.Password);
+        if (!addResult.Succeeded)
+        {
+            return ApplicationResult<AuthenticatedUserDto>.Failure(BuildIdentityErrorMessage(
+                addResult,
+                "No fue posible guardar la nueva contraseña."));
+        }
+
+        user.EmailConfirmed = true;
+        user.LockoutEnd = null;
+        user.AccessFailedCount = 0;
+        user.LastActivityAtUtc = timeProvider.GetUtcNow();
+        var updateResult = await userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+        {
+            return ApplicationResult<AuthenticatedUserDto>.Failure(BuildIdentityErrorMessage(
+                updateResult,
+                "No fue posible activar la nueva contraseña."));
+        }
+
         return ApplicationResult<AuthenticatedUserDto>.Success(await CreateAuthenticatedUserAsync(user, cancellationToken));
     }
 

@@ -92,6 +92,7 @@ const label = {
   VehicleRegistration: "Tarjeta de propiedad",
   Insurance: "SOAT",
   Roadworthiness: "Tecnomecánica",
+  SelfieVerification: "Selfie de validación",
   Cash: "Efectivo",
   Nequi: "Nequi",
   PassengerOffer: "Tu oferta",
@@ -219,6 +220,87 @@ function renderAdditionalDriverDocumentList(driver) {
       <h3>Documentos adicionales</h3>
       <ul class="document-list">${additionalDocuments.map(document => `<li class="list-item"><div><h3>${escapeHtml(label[document.type] || document.type)}</h3><p>${document.expiresOn ? `Vence: ${escapeHtml(document.expiresOn)}` : "Sin fecha de vencimiento"}</p></div>${statusBadge(document.reviewStatus)}</li>`).join("")}</ul>
     </div>`;
+}
+
+function getDriverDocumentInstruction(type) {
+  switch (type) {
+    case "PersonalIdentification":
+      return "Cédula o documento del conductor. Toma foto clara por ambos lados si aplica.";
+    case "DriverLicense":
+      return "Licencia vigente. Debe verse nombre, número y fecha de vencimiento.";
+    case "VehicleRegistration":
+      return "Tarjeta de propiedad de la moto. La placa debe coincidir con el vehículo registrado.";
+    case "Insurance":
+      return "SOAT vigente. Sube PDF o una foto donde se vea la vigencia.";
+    case "Roadworthiness":
+      return "Tecnomecánica si aplica por antigüedad de la moto.";
+    case "SelfieVerification":
+      return "Foto actual del rostro para comparación manual del administrador.";
+    default:
+      return "Documento adicional para revisión administrativa.";
+  }
+}
+
+function renderDriverDocumentUploadCards(driver) {
+  const requiredTypes = getRequiredDriverDocumentTypes(driver);
+  const cardTypes = [...new Set([...requiredTypes, "SelfieVerification"])];
+
+  return `
+    <section class="driver-document-uploader" aria-label="Carga de documentos del conductor">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">Documentos y validación</span>
+          <h3>Sube o toma foto de cada requisito</h3>
+          <p class="muted small-text">En celular puedes tocar “Tomar foto”. En computador puedes usar “Subir archivo”. El administrador revisa y aprueba cada documento.</p>
+        </div>
+      </div>
+      <div class="driver-document-upload-grid">
+        ${cardTypes.map(type => renderDriverDocumentUploadCard(type, getLatestDocumentByType(driver, type), requiredTypes.includes(type))).join("")}
+      </div>
+    </section>`;
+}
+
+function renderDriverDocumentUploadCard(type, document, isRequired) {
+  const slug = String(type).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const status = document?.reviewStatus || "AwaitingReview";
+  const uploadedText = document
+    ? document.expiresOn ? `Último archivo cargado · vence ${escapeHtml(document.expiresOn)}`
+      : "Último archivo cargado · sin vencimiento"
+    : isRequired ? "Pendiente obligatorio" : "Recomendado para validar identidad";
+  const expiryLabel = type === "SelfieVerification" || type === "PersonalIdentification"
+    ? "Vencimiento (si aplica)"
+    : "Fecha de vencimiento";
+
+  return `
+    <form class="driver-document-upload-card ${document ? "has-document" : "is-missing"}" data-document-upload-form>
+      <input type="hidden" name="type" value="${escapeHtml(type)}">
+      <div class="document-upload-card-head">
+        <div>
+          <h4>${escapeHtml(label[type] || type)}</h4>
+          <p>${escapeHtml(uploadedText)}</p>
+        </div>
+        ${statusBadge(status)}
+      </div>
+      <p class="document-upload-instruction">${escapeHtml(getDriverDocumentInstruction(type))}</p>
+      <div class="field">
+        <label for="document-expiry-${slug}">${expiryLabel}</label>
+        <input id="document-expiry-${slug}" name="expiresOn" type="date">
+      </div>
+      <div class="document-capture-actions">
+        <label class="document-file-action">
+          <span aria-hidden="true">📷</span>
+          <strong>Tomar foto</strong>
+          <input name="cameraFile" type="file" accept="image/*" capture="environment">
+        </label>
+        <label class="document-file-action">
+          <span aria-hidden="true">📁</span>
+          <strong>Subir archivo</strong>
+          <input name="uploadFile" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
+        </label>
+      </div>
+      <p class="selected-document-file" data-selected-document-file>Sin archivo seleccionado.</p>
+      <button class="button button-secondary document-submit-button" type="submit">Enviar a revisión</button>
+    </form>`;
 }
 
 // Animaciones nativas y opcionales: no se depende de una librería externa para
@@ -2086,6 +2168,7 @@ function renderGoogleAuthSection(mode) {
           <span>${actionText}</span>
         </button>
       </div>
+      <p class="google-auth-help">Si Google muestra “acceso bloqueado”, agrega tu Gmail como usuario de prueba en Google Cloud → Google Auth Platform → Público.</p>
     </section>`;
 }
 
@@ -2245,23 +2328,56 @@ function bindAuthUtilities() {
       const emailInput = emailTarget ? document.querySelector(emailTarget) : null;
       if (emailInput && !emailInput.value.trim()) {
         emailInput.focus();
+        showNotice("Escribe tu correo para preparar la recuperación.");
+        return;
       }
 
-      showNotice("Recuperación visible: falta conectar el correo de HÁGALE para enviar enlaces reales.");
+      setAuthForm("forgot", { email: emailInput?.value || "" });
     });
   });
 }
 
-function setAuthForm(mode) {
+function setAuthForm(mode, options = {}) {
   app.querySelectorAll("[data-auth-mode]").forEach(button => {
     button.setAttribute("aria-selected", String(button.dataset.authMode === mode));
   });
 
   const container = document.querySelector("#auth-form");
+  if (mode === "forgot") {
+    container.innerHTML = `
+      <h2>Recuperar acceso</h2>
+      <p class="muted small-text">Modo demo: actualiza la contraseña de una cuenta existente. En producción esto enviará un enlace seguro por correo.</p>
+      <form id="password-recovery-form">
+        <div class="field"><label for="recovery-email">Correo</label><input id="recovery-email" name="email" type="email" autocomplete="email" value="${escapeHtml(options.email || "")}" required></div>
+        <div class="field">
+          <label for="recovery-password">Nueva contraseña</label>
+          <div class="password-control">
+            <input id="recovery-password" name="password" type="password" autocomplete="new-password" minlength="12" required>
+            <button class="password-toggle" type="button" data-toggle-password="#recovery-password" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña">${renderPasswordIcon()}</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="recovery-password-confirm">Confirmar contraseña</label>
+          <div class="password-control">
+            <input id="recovery-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" minlength="12" required>
+            <button class="password-toggle" type="button" data-toggle-password="#recovery-password-confirm" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña">${renderPasswordIcon()}</button>
+          </div>
+        </div>
+        <div class="button-row">
+          <button class="button button-primary" type="submit">Actualizar contraseña</button>
+          <button class="button button-secondary" type="button" data-auth-mode="login">Volver a ingresar</button>
+        </div>
+      </form>`;
+    document.querySelector("#password-recovery-form").addEventListener("submit", handlePasswordRecovery);
+    container.querySelector("[data-auth-mode='login']")?.addEventListener("click", () => setAuthForm("login"));
+    bindAuthUtilities();
+    return;
+  }
+
   if (mode === "login") {
     container.innerHTML = `
       <h2>Bienvenido de nuevo</h2>
-      <p class="muted small-text">Ingresa con el correo registrado.</p>
+      <p class="muted small-text">Ingresa con el correo registrado. En esta demo gratuita, si Render se reinicia, puede tocar crear la cuenta otra vez hasta conectar base de datos real.</p>
       ${renderGoogleAuthSection("login")}
       <form id="login-form">
         <div class="field"><label for="login-email">Correo</label><input id="login-email" name="email" type="email" autocomplete="email" required></div>
@@ -2298,7 +2414,6 @@ function setAuthForm(mode) {
           <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
           <button class="password-toggle" type="button" data-toggle-password="#password" aria-label="Mostrar contraseña" aria-pressed="false" title="Mostrar contraseña">${renderPasswordIcon()}</button>
         </div>
-        <button class="forgot-password-link" type="button" data-forgot-password data-email-target="#email">¿Olvidaste tu contraseña?</button>
       </div>
       <button class="button button-primary" type="submit">Crear mi cuenta</button>
     </form>`;
@@ -2313,16 +2428,21 @@ async function handleLogin(event) {
   await authenticate("/auth/login", { email: form.get("email"), password: form.get("password") });
 }
 
+function getPasswordValidationErrors(password) {
+  const errors = [];
+  if (password.length < 12) errors.push("mínimo 12 caracteres");
+  if (!/[A-ZÁÉÍÓÚÜÑ]/.test(password)) errors.push("una mayúscula");
+  if (!/[a-záéíóúüñ]/.test(password)) errors.push("una minúscula");
+  if (!/\d/.test(password)) errors.push("un número");
+  if (!/[^\p{L}\p{N}\s]/u.test(password)) errors.push("un símbolo");
+  return errors;
+}
+
 async function handleRegister(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const password = String(form.get("password") || "");
-  const passwordErrors = [];
-  if (password.length < 12) passwordErrors.push("mínimo 12 caracteres");
-  if (!/[A-ZÁÉÍÓÚÜÑ]/.test(password)) passwordErrors.push("una mayúscula");
-  if (!/[a-záéíóúüñ]/.test(password)) passwordErrors.push("una minúscula");
-  if (!/\d/.test(password)) passwordErrors.push("un número");
-  if (!/[^\p{L}\p{N}\s]/u.test(password)) passwordErrors.push("un símbolo");
+  const passwordErrors = getPasswordValidationErrors(password);
 
   if (passwordErrors.length > 0) {
     showNotice(`La contraseña necesita: ${passwordErrors.join(", ")}.`, true);
@@ -2333,12 +2453,43 @@ async function handleRegister(event) {
   await authenticate("/auth/register", Object.fromEntries(form));
 }
 
+async function handlePasswordRecovery(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const password = String(form.get("password") || "");
+  const passwordConfirm = String(form.get("passwordConfirm") || "");
+  const passwordErrors = getPasswordValidationErrors(password);
+
+  if (passwordErrors.length > 0) {
+    showNotice(`La nueva contraseña necesita: ${passwordErrors.join(", ")}.`, true);
+    document.querySelector("#recovery-password")?.focus();
+    return;
+  }
+
+  if (password !== passwordConfirm) {
+    showNotice("Las contraseñas no coinciden.", true);
+    document.querySelector("#recovery-password-confirm")?.focus();
+    return;
+  }
+
+  await authenticate("/auth/demo-reset-password", {
+    email: form.get("email"),
+    password
+  });
+}
+
 async function authenticate(path, data) {
   try {
     const result = await request(path, { method: "POST", data });
     state.token = result.accessToken;
     sessionStorage.setItem(sessionKey, state.token);
-    showNotice(path.endsWith("register") ? "Cuenta creada. Bienvenido a HÁGALE." : path.endsWith("google") ? "Sesión iniciada con Google." : "Sesión iniciada.");
+    showNotice(path.endsWith("register")
+      ? "Cuenta creada. Bienvenido a HÁGALE."
+      : path.endsWith("google")
+        ? "Sesión iniciada con Google."
+        : path.endsWith("demo-reset-password")
+          ? "Contraseña actualizada. Sesión iniciada."
+          : "Sesión iniciada.");
     await loadDashboard();
   } catch (error) {
     showNotice(error.message, true);
@@ -3204,6 +3355,7 @@ function renderDriverPanel(driver, isDriver) {
           <div class="section-title"><div><h3>Documentos obligatorios</h3><p class="muted small-text">PDF, JPG o PNG. Máximo 5 MB. Debes cargarlos para que Administración pueda aprobarte.</p></div></div>
           <ul class="document-list">${documents}</ul>
           ${renderAdditionalDriverDocumentList(driver)}
+          ${renderDriverDocumentUploadCards(driver)}
         </div>
 
         <div>
@@ -3245,7 +3397,7 @@ function renderDriverSettingsPanel(driver) {
       <div class="section-title"><div><span class="eyebrow">Configuración del conductor</span><h2>Tu moto y documentos</h2><p class="muted">Esta información permanece separada del tablero de solicitudes. Puedes corregir la moto cuando lo necesites.</p></div>${statusBadge(driver.status)}</div>
       <div class="driver-settings-grid">
         <div><h3>Vehículo activo</h3><ul class="vehicle-list">${vehicles}</ul></div>
-        <div><h3>Documentos revisados</h3><ul class="document-list">${documents}</ul>${renderAdditionalDriverDocumentList(driver)}</div>
+        <div><h3>Documentos revisados</h3><ul class="document-list">${documents}</ul>${renderAdditionalDriverDocumentList(driver)}${renderDriverDocumentUploadCards(driver)}</div>
       </div>
       <details class="edit-panel">
         <summary>Editar datos de la moto o documento</summary>
@@ -3587,6 +3739,20 @@ function bindDriverEvents() {
   });
   const documentForm = app.querySelector("#document-form");
   if (documentForm) documentForm.addEventListener("submit", addDocument);
+  app.querySelectorAll("[data-document-upload-form]").forEach(form => {
+    form.addEventListener("submit", addDocument);
+  });
+  app.querySelectorAll("[data-document-upload-form] input[type='file']").forEach(input => {
+    input.addEventListener("change", () => {
+      const form = input.closest("[data-document-upload-form]");
+      const indicator = form?.querySelector("[data-selected-document-file]");
+      if (!indicator) return;
+      const selectedFile = input.files?.[0];
+      indicator.textContent = selectedFile?.name
+        ? `Archivo seleccionado: ${selectedFile.name}`
+        : "Sin archivo seleccionado.";
+    });
+  });
   const pickupLocationButton = app.querySelector("[data-capture-pickup-location]");
   if (pickupLocationButton) pickupLocationButton.addEventListener("click", capturePickupLocation);
   app.querySelectorAll("[data-open-ride-map]").forEach(button => {
@@ -3802,12 +3968,33 @@ async function updateVehicle(event, vehicleId) {
 async function addDocument(event) {
   event.preventDefault();
   try {
-    const form = new FormData(event.currentTarget);
-    if (!form.get("expiresOn")) form.delete("expiresOn");
+    const form = buildDriverDocumentFormData(event.currentTarget);
+    if (!form) return;
     state.application = await request("/driver-application/documents", { method: "POST", form });
     renderDashboard();
     showNotice("Documento cargado para revisión.");
   } catch (error) { showNotice(error.message, true); }
+}
+
+function buildDriverDocumentFormData(sourceForm) {
+  const submitted = new FormData(sourceForm);
+  const selectedFile = getSelectedDocumentFile(submitted);
+  if (!selectedFile) {
+    showNotice("Selecciona un archivo o toma una foto antes de enviar el documento.", true);
+    return null;
+  }
+
+  const form = new FormData();
+  form.set("type", submitted.get("type") || "Other");
+  const expiresOn = submitted.get("expiresOn");
+  if (expiresOn) form.set("expiresOn", expiresOn);
+  form.set("file", selectedFile, selectedFile.name || `${submitted.get("type") || "documento"}.jpg`);
+  return form;
+}
+
+function getSelectedDocumentFile(formData) {
+  const candidates = [formData.get("file"), formData.get("cameraFile"), formData.get("uploadFile")];
+  return candidates.find(value => value instanceof File && value.size > 0) || null;
 }
 
 async function createRideRequest(event) {
