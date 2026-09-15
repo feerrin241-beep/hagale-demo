@@ -6,6 +6,7 @@ using Hagale.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Hagale.Infrastructure.Persistence;
 
@@ -23,7 +24,7 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        StampInMemoryConcurrencyTokens();
+        StampApplicationConcurrencyTokens();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
@@ -31,13 +32,14 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
-        StampInMemoryConcurrencyTokens();
+        StampApplicationConcurrencyTokens();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        var usesPostgres = Database.IsNpgsql();
 
         builder.Entity<AppUser>(entity =>
         {
@@ -58,7 +60,7 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
             entity.Property(driver => driver.AdministrativeNotes).HasMaxLength(1_000);
             entity.Property(driver => driver.LastKnownLatitude).HasPrecision(9, 6);
             entity.Property(driver => driver.LastKnownLongitude).HasPrecision(9, 6);
-            entity.Property(driver => driver.RowVersion).IsRowVersion().IsRequired();
+            ConfigureConcurrencyToken(entity.Property(driver => driver.RowVersion), usesPostgres);
             entity.HasOne<AppUser>()
                 .WithOne()
                 .HasForeignKey<DriverProfile>(driver => driver.UserId)
@@ -135,7 +137,7 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
             entity.Property(request => request.PickupLongitude).HasPrecision(9, 6);
             entity.Property(request => request.DestinationLatitude).HasPrecision(9, 6);
             entity.Property(request => request.DestinationLongitude).HasPrecision(9, 6);
-            entity.Property(request => request.RowVersion).IsRowVersion().IsRequired();
+            ConfigureConcurrencyToken(entity.Property(request => request.RowVersion), usesPostgres);
             entity.HasIndex(request => new { request.CustomerUserId, request.RequestedAtUtc });
             entity.HasIndex(request => request.Status);
             entity.HasIndex(request => new { request.Status, request.OperatingCityCode, request.ServiceType });
@@ -166,7 +168,7 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
                 .HasDefaultValue(PricingRule.DefaultAdditionalWaitingFarePerMinuteCop)
                 .IsRequired();
             entity.Property(rule => rule.UpdatedAtUtc).IsRequired();
-            entity.Property(rule => rule.RowVersion).IsRowVersion().IsRequired();
+            ConfigureConcurrencyToken(entity.Property(rule => rule.RowVersion), usesPostgres);
             entity.HasIndex(rule => new { rule.CityCode, rule.ServiceType }).IsUnique();
         });
 
@@ -194,14 +196,15 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
             entity.Property(channel => channel.DisplayName).HasMaxLength(100).IsRequired();
             entity.Property(channel => channel.ContactNumber).HasMaxLength(20).IsRequired();
             entity.Property(channel => channel.UpdatedAtUtc).IsRequired();
-            entity.Property(channel => channel.RowVersion).IsRowVersion().IsRequired();
+            ConfigureConcurrencyToken(entity.Property(channel => channel.RowVersion), usesPostgres);
             entity.HasIndex(channel => new { channel.CityCode, channel.ChannelType }).IsUnique();
         });
     }
 
-    private void StampInMemoryConcurrencyTokens()
+    private void StampApplicationConcurrencyTokens()
     {
-        if (!string.Equals(Database.ProviderName, "Microsoft.EntityFrameworkCore.InMemory", StringComparison.Ordinal))
+        var usesInMemory = string.Equals(Database.ProviderName, "Microsoft.EntityFrameworkCore.InMemory", StringComparison.Ordinal);
+        if (!usesInMemory && !Database.IsNpgsql())
         {
             return;
         }
@@ -221,5 +224,22 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
                 rowVersion.CurrentValue = Guid.NewGuid().ToByteArray();
             }
         }
+    }
+
+    private static void ConfigureConcurrencyToken(
+        PropertyBuilder<byte[]> property,
+        bool usesPostgres)
+    {
+        if (usesPostgres)
+        {
+            property
+                .HasColumnType("bytea")
+                .IsConcurrencyToken()
+                .ValueGeneratedNever()
+                .IsRequired();
+            return;
+        }
+
+        property.IsRowVersion().IsRequired();
     }
 }

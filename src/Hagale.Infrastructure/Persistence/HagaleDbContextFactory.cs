@@ -9,10 +9,19 @@ public sealed class HagaleDbContextFactory : IDesignTimeDbContextFactory<HagaleD
     {
         var connectionString = Environment.GetEnvironmentVariable("HAGALE_MIGRATIONS_CONNECTION_STRING")
             ?? "Server=(localdb)\\MSSQLLocalDB;Database=HagaleDevelopment;Trusted_Connection=True;TrustServerCertificate=True;";
+        var provider = Environment.GetEnvironmentVariable("HAGALE_MIGRATIONS_PROVIDER");
+        var optionsBuilder = new DbContextOptionsBuilder<HagaleDbContext>();
 
-        return new HagaleDbContext(
-            new DbContextOptionsBuilder<HagaleDbContext>()
-                .UseSqlServer(connectionString)
-                .Options);
+        if (string.Equals(provider, "Postgres", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(provider, "PostgreSQL", StringComparison.OrdinalIgnoreCase))
+        {
+            optionsBuilder.UseNpgsql(connectionString);
+        }
+        else
+        {
+            optionsBuilder.UseSqlServer(connectionString);
+        }
+
+        return new HagaleDbContext(optionsBuilder.Options);
     }
 }

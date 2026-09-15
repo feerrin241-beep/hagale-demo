@@ -15,7 +15,8 @@ public static class DatabaseInitializer
         using var scope = services.CreateScope();
         var database = scope.ServiceProvider.GetRequiredService<HagaleDbContext>();
         var timeProvider = scope.ServiceProvider.GetRequiredService<TimeProvider>();
-        if (string.Equals(database.Database.ProviderName, "Microsoft.EntityFrameworkCore.InMemory", StringComparison.Ordinal))
+        if (string.Equals(database.Database.ProviderName, "Microsoft.EntityFrameworkCore.InMemory", StringComparison.Ordinal) ||
+            database.Database.IsNpgsql())
         {
             await database.Database.EnsureCreatedAsync(cancellationToken);
         }

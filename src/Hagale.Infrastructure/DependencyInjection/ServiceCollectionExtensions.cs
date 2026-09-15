@@ -34,6 +34,13 @@ public static class ServiceCollectionExtensions
                 return;
             }
 
+            if (string.Equals(databaseProvider, "Postgres", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(databaseProvider, "PostgreSQL", StringComparison.OrdinalIgnoreCase))
+            {
+                options.UseNpgsql(connectionString);
+                return;
+            }
+
             options.UseSqlServer(connectionString);
         });
         services.AddIdentityCore<AppUser>(options =>
