@@ -15,6 +15,7 @@ public sealed class RideEventsHub : Hub
     public const string DispatchChangedEvent = "dispatchChanged";
     public const string DriverLocationChangedEvent = "driverLocationChanged";
     public const string DriverApplicationChangedEvent = "driverApplicationChanged";
+    public const string RideChatMessageEvent = "rideChatMessage";
 
     public override async Task OnConnectedAsync()
     {

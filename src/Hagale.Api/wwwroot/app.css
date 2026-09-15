@@ -5623,6 +5623,18 @@ body.welcome-view {
   background: #111218;
 }
 
+.private-communication-card.is-active {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.private-communication-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
 .private-communication-card strong {
   display: block;
   color: #ffd800;
@@ -5651,6 +5663,88 @@ body.welcome-view {
   color: #ffd800;
   background: rgba(255,216,0,.08);
   font-weight: 950;
+}
+
+.private-communication-actions button.is-selected {
+  color: #111218;
+  background: #ffd800;
+}
+
+.ride-chat-messages {
+  display: grid;
+  gap: .55rem;
+  max-height: 13rem;
+  margin: .35rem 0 0;
+  padding: .65rem;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid rgba(255,216,0,.18);
+  border-radius: .9rem;
+  background: rgba(255,255,255,.06);
+}
+
+.ride-chat-empty {
+  color: rgba(255,255,255,.78);
+  font-size: .86rem;
+  font-weight: 800;
+}
+
+.ride-chat-message {
+  display: grid;
+  gap: .25rem;
+  width: min(88%, 27rem);
+  padding: .58rem .7rem;
+  border-radius: .85rem;
+  color: #fff;
+  background: rgba(255,255,255,.12);
+}
+
+.ride-chat-message.is-mine {
+  justify-self: end;
+  color: #111218;
+  background: #ffd800;
+}
+
+.ride-chat-message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  font-size: .72rem;
+}
+
+.ride-chat-message-meta strong {
+  color: inherit;
+  font-size: .78rem;
+}
+
+.ride-chat-message-meta time {
+  opacity: .68;
+  white-space: nowrap;
+}
+
+.ride-chat-message p {
+  margin: 0;
+  color: inherit;
+  font-size: .9rem;
+  font-weight: 850;
+  line-height: 1.32;
+}
+
+.ride-chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .5rem;
+}
+
+.ride-chat-form input {
+  width: 100%;
+  min-height: 2.55rem;
+  border: 1px solid rgba(255,216,0,.7);
+  border-radius: .78rem;
+  color: #111218;
+  background: #fffde8;
+  font-weight: 850;
 }
 
 .dispatch-tech-card {
@@ -5721,5 +5815,13 @@ body.welcome-view {
 
   .private-communication-actions button {
     flex: 1 1 5.5rem;
+  }
+
+  .ride-chat-form {
+    grid-template-columns: 1fr;
+  }
+
+  .ride-chat-form .button {
+    width: 100%;
   }
 }

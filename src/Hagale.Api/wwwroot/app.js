@@ -60,6 +60,8 @@ const state = {
   customerTrackingMap: null,
   customerTrackingPollingTimer: null,
   customerTrackingVersion: 0,
+  rideChatMessages: {},
+  rideChatLoadingIds: new Set(),
   hiddenDriverOfferIds: new Set(),
   dispatchPollingTimer: null,
   driverMap: null,
@@ -855,6 +857,7 @@ function stopRideRealtime() {
   connection.off("dispatchChanged");
   connection.off("driverLocationChanged");
   connection.off("driverApplicationChanged");
+  connection.off("rideChatMessage");
   void connection.stop().catch(() => {
     // La conexión puede estar cerrada mientras la página cambia de sesión.
   });
@@ -936,6 +939,11 @@ function syncRideRealtime() {
       // cada persona autorizada puede consultar.
       await loadDashboard();
     });
+  });
+
+  connection.on("rideChatMessage", rideRequestId => {
+    if (state.realtimeConnection !== connection) return;
+    void runRealtimeRefresh(() => refreshRideChatIfVisible(rideRequestId));
   });
 
   connection.onclose(() => scheduleRideRealtimeRetry(connection));
@@ -3095,12 +3103,14 @@ function renderDashboard() {
   bindSafetyEvents();
   bindDriverEvents();
   bindAdminEvents();
+  bindRideChatEvents();
   syncDispatchPolling(isDriverMode, driver);
   syncCustomerTrackingPolling(!isDriverMode && profile.roles.includes("Customer"));
   syncRideRealtime();
   mountDriverMap();
   mountCustomerTrackingMap();
   mountCustomerRideMap();
+  syncVisibleRideChats();
   activateRevealAnimations();
 }
 
@@ -3276,20 +3286,146 @@ async function refreshDriverAccess() {
   }
 }
 
-function renderPrivateCommunicationCard() {
+function canUseRideChat(rideRequest) {
+  return Boolean(rideRequest?.id && activeCustomerRideStatuses.has(rideRequest.status));
+}
+
+function renderRideChatMessages(messages = []) {
+  if (!messages.length) {
+    return '<li class="ride-chat-empty">Todavía no hay mensajes. Puedes avisar por aquí que ya vas en camino.</li>';
+  }
+
+  return messages.map(message => {
+    const isMine = state.profile?.userId && message.senderUserId === state.profile.userId;
+    const sender = isMine ? "Tú" : (message.senderName || message.senderRole || "Participante");
+    return `
+      <li class="ride-chat-message ${isMine ? "is-mine" : "is-other"}">
+        <div class="ride-chat-message-meta"><strong>${escapeHtml(sender)}</strong><time>${escapeHtml(formatDateTime(message.sentAtUtc))}</time></div>
+        <p>${escapeHtml(message.message)}</p>
+      </li>`;
+  }).join("");
+}
+
+function renderPrivateCommunicationCard(rideRequest = null) {
+  const chatEnabled = canUseRideChat(rideRequest);
+  const rideId = rideRequest?.id || "";
+  const messages = rideId ? (state.rideChatMessages[rideId] || []) : [];
+
+  if (!chatEnabled) {
+    return `
+      <section class="private-communication-card is-disabled">
+        <div>
+          <span class="eyebrow">Comunicación privada</span>
+          <strong>Chat interno protegido</strong>
+          <p>Se habilita cuando el servicio sea aceptado. Solo podrán verlo el pasajero y el conductor asignado.</p>
+        </div>
+        <div class="private-communication-actions" aria-label="Funciones de comunicación">
+          <button type="button" disabled>Chat</button>
+          <button type="button" disabled title="Las llamadas privadas se conectarán en la siguiente integración">Llamar</button>
+          <button type="button" disabled title="Telegram queda como respaldo de alertas">Telegram</button>
+        </div>
+      </section>`;
+  }
+
   return `
-    <section class="private-communication-card">
-      <div>
-        <span class="eyebrow">Comunicación privada</span>
-        <strong>Chat interno y llamada protegida</strong>
-        <p>Se activará al aceptar un servicio. Telegram puede servir como respaldo de alertas, no como chat principal.</p>
+    <section class="private-communication-card is-active" data-ride-chat="${escapeHtml(rideId)}">
+      <div class="private-communication-heading">
+        <div>
+          <span class="eyebrow">Comunicación privada</span>
+          <strong>Chat de esta carrera</strong>
+          <p>Mensaje directo entre los participantes. No se publican teléfonos ni se mezcla con otras carreras.</p>
+        </div>
+        <button class="button button-quiet small" type="button" data-refresh-ride-chat="${escapeHtml(rideId)}" aria-label="Actualizar chat">↻</button>
       </div>
-      <div class="private-communication-actions" aria-label="Funciones próximas de comunicación">
-        <button type="button" disabled>Chat</button>
-        <button type="button" disabled>Llamar</button>
-        <button type="button" disabled>Telegram</button>
+      <ul class="ride-chat-messages" data-ride-chat-list="${escapeHtml(rideId)}" aria-live="polite">${renderRideChatMessages(messages)}</ul>
+      <form class="ride-chat-form" data-ride-chat-form="${escapeHtml(rideId)}">
+        <label class="sr-only" for="ride-chat-input-${escapeHtml(rideId)}">Mensaje privado</label>
+        <input id="ride-chat-input-${escapeHtml(rideId)}" name="message" maxlength="500" autocomplete="off" placeholder="Escribe un mensaje..." required>
+        <button class="button button-primary small" type="submit">Enviar</button>
+      </form>
+      <div class="private-communication-actions" aria-label="Funciones de comunicación">
+        <button class="is-selected" type="button" disabled>Chat interno</button>
+        <button type="button" disabled title="Las llamadas privadas se habilitarán con un proveedor de voz">Llamar</button>
+        <button type="button" disabled title="Telegram queda como respaldo de alertas">Telegram</button>
       </div>
     </section>`;
+}
+
+function updateRideChatDom(rideRequestId) {
+  const rideId = String(rideRequestId || "");
+  if (!rideId) return;
+  const list = app.querySelector(`[data-ride-chat-list="${rideId}"]`);
+  if (!list) return;
+  list.innerHTML = renderRideChatMessages(state.rideChatMessages[rideId] || []);
+  list.scrollTop = list.scrollHeight;
+}
+
+async function loadRideChat(rideRequestId) {
+  const rideId = String(rideRequestId || "");
+  if (!rideId || !state.token || state.rideChatLoadingIds.has(rideId)) return;
+  state.rideChatLoadingIds.add(rideId);
+  try {
+    state.rideChatMessages[rideId] = await request(`/ride-requests/${rideId}/messages`);
+    updateRideChatDom(rideId);
+  } catch {
+    // El chat puede dejar de estar disponible cuando el servicio cambia de
+    // estado; la tarjeta visible conserva el último contenido recibido.
+  } finally {
+    state.rideChatLoadingIds.delete(rideId);
+  }
+}
+
+async function refreshRideChatIfVisible(rideRequestId) {
+  const rideId = String(rideRequestId || "");
+  if (!rideId || !app.querySelector(`[data-ride-chat-list="${rideId}"]`)) return;
+  await loadRideChat(rideId);
+}
+
+function syncVisibleRideChats() {
+  app.querySelectorAll("[data-ride-chat-list]").forEach(list => {
+    void loadRideChat(list.dataset.rideChatList);
+  });
+}
+
+async function sendRideChatMessage(event, form) {
+  event.preventDefault();
+  const rideId = form.dataset.rideChatForm;
+  const input = form.elements.message;
+  const message = input?.value?.trim();
+  if (!rideId || !message) return;
+
+  const submit = form.querySelector("button[type='submit']");
+  if (submit) submit.disabled = true;
+  try {
+    const created = await request(`/ride-requests/${rideId}/messages`, {
+      method: "POST",
+      data: { message }
+    });
+    const messages = state.rideChatMessages[rideId] || [];
+    state.rideChatMessages[rideId] = [...messages, created].slice(-200);
+    updateRideChatDom(rideId);
+    input.value = "";
+  } catch (error) {
+    showNotice(error.message || "No fue posible enviar el mensaje.", true);
+  } finally {
+    if (submit?.isConnected) submit.disabled = false;
+  }
+}
+
+function bindRideChatEvents() {
+  app.querySelectorAll("[data-ride-chat-form]").forEach(form => {
+    form.addEventListener("submit", event => sendRideChatMessage(event, form));
+  });
+  app.querySelectorAll("[data-refresh-ride-chat]").forEach(button => {
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        await loadRideChat(button.dataset.refreshRideChat);
+      } finally {
+        if (button.isConnected) button.disabled = false;
+      }
+    });
+  });
 }
 
 function renderDriverRideRequestsPanel() {
@@ -3324,7 +3460,7 @@ function renderDriverRideRequestsPanel() {
         ${journeyGuidance}
         ${renderJourneyTimeline(currentRequest)}
         ${renderWaitingInformation(currentRequest, null, "driver")}
-        ${renderPrivateCommunicationCard()}
+        ${renderPrivateCommunicationCard(currentRequest)}
         ${showNavigation ? renderDriverNavigationAction(currentRequest, navigationTarget) : ""}
         ${journeyAction ? `<div class="button-row driver-active-actions">${journeyAction}</div>` : ""}
       </article>`;
@@ -3375,7 +3511,7 @@ function renderDriverOfferSheet(offer) {
       </div>
       ${renderDriverPriceReference(offer)}
       ${renderRidePreferenceTags(offer)}
-      ${renderPrivateCommunicationCard()}
+      ${renderPrivateCommunicationCard(rideRequest)}
       <p class="driver-sheet-note">La tarifa es la oferta del pasajero. Estas son distancias directas; el tiempo y la ruta por calles se añadirán cuando integremos navegación.</p>
       ${renderDriverNavigationAction(offer, "pickup")}
       <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}">Aceptar por ${formatCop(offer.proposedPriceCop)}</button>

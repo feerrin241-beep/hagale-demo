@@ -728,6 +728,13 @@ public sealed class RideRequestServiceTests
             return Task.CompletedTask;
         }
 
+        public Task NotifyRideChatMessageAsync(
+            Guid customerUserId,
+            Guid? driverUserId,
+            Guid rideRequestId,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
         public void Clear()
         {
             RideChanges.Clear();

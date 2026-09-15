@@ -52,6 +52,25 @@ public sealed class SignalRRideRealtimeNotifier(
             [RideEventsHub.UserGroup(customerUserId)],
             cancellationToken);
 
+    public Task NotifyRideChatMessageAsync(
+        Guid customerUserId,
+        Guid? driverUserId,
+        Guid rideRequestId,
+        CancellationToken cancellationToken = default)
+    {
+        var recipientGroups = new List<string> { RideEventsHub.UserGroup(customerUserId) };
+        if (driverUserId.HasValue)
+        {
+            recipientGroups.Add(RideEventsHub.UserGroup(driverUserId.Value));
+        }
+
+        return PublishSafelyAsync(
+            RideEventsHub.RideChatMessageEvent,
+            rideRequestId,
+            recipientGroups,
+            cancellationToken);
+    }
+
     private async Task PublishSafelyAsync(
         string eventName,
         object payload,

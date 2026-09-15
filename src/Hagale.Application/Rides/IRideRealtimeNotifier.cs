@@ -21,6 +21,12 @@ public interface IRideRealtimeNotifier
         Guid customerUserId,
         Guid rideRequestId,
         CancellationToken cancellationToken = default);
+
+    Task NotifyRideChatMessageAsync(
+        Guid customerUserId,
+        Guid? driverUserId,
+        Guid rideRequestId,
+        CancellationToken cancellationToken = default);
 }
 
 // Las pruebas y otros hosts pueden usar el servicio sin infraestructura de
@@ -46,6 +52,12 @@ public sealed class NullRideRealtimeNotifier : IRideRealtimeNotifier
 
     public Task NotifyDriverLocationChangedAsync(
         Guid customerUserId,
+        Guid rideRequestId,
+        CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task NotifyRideChatMessageAsync(
+        Guid customerUserId,
+        Guid? driverUserId,
         Guid rideRequestId,
         CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
