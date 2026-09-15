@@ -5437,3 +5437,289 @@ body.welcome-view {
     padding: clamp(.85rem, 2.5svh, 1.2rem);
   }
 }
+
+/* Ajustes operativos de demo: lectura fuerte, menos texto y acceso rápido. */
+.welcome-guest-button,
+.demo-guest-inline {
+  border: 2px solid #ffd800;
+  color: #ffd800;
+  background: #111218;
+  font-weight: 1000;
+}
+
+.welcome-guest-button:hover,
+.demo-guest-inline:hover {
+  color: #111218;
+  background: #ffd800;
+}
+
+.welcome-auth-card .demo-guest-inline {
+  width: 100%;
+  min-height: 2.9rem;
+  margin-bottom: .65rem;
+  border-radius: .82rem;
+}
+
+#auth-form {
+  padding-bottom: 1.35rem;
+}
+
+#auth-form .button-primary {
+  min-height: 3.45rem;
+}
+
+.driver-mode-status-big {
+  color: #ffd800;
+  font-size: clamp(1.55rem, 5vw, 2.35rem) !important;
+  font-weight: 1000;
+  letter-spacing: -.05em;
+}
+
+.driver-live-state {
+  justify-content: center;
+  padding: .45rem .65rem;
+  border: 1px solid rgba(255,216,0,.35);
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.sub-field-label {
+  margin-top: .62rem;
+  color: #3f4047 !important;
+  font-size: .74rem !important;
+}
+
+.customer-route-summary strong small,
+.driver-sheet-route strong small,
+.customer-search-route strong small {
+  display: block;
+  margin-top: .18rem;
+  color: #6b6c73;
+  font-size: .72rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.help-dot {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-left: .25rem;
+  border: 2px solid #111218;
+  border-radius: 50%;
+  color: #111218;
+  background: #ffd800;
+  font-size: .78rem;
+  font-weight: 1000;
+  vertical-align: middle;
+}
+
+.ride-price-field input {
+  min-height: 3.45rem;
+  color: #000 !important;
+  background: #fff9bc !important;
+  font-size: clamp(1.45rem, 6vw, 2.2rem);
+  font-weight: 1000;
+  letter-spacing: -.04em;
+}
+
+.customer-ride-form .ride-price-reference strong,
+.driver-price-reference-values strong,
+.driver-sheet-metrics strong,
+.customer-search-offer strong,
+.customer-counteroffer-price strong,
+.performance-metrics strong,
+.wallet-balance-card strong {
+  font-weight: 1000;
+}
+
+.customer-ride-form .ride-price-reference strong {
+  font-size: clamp(1.15rem, 4vw, 1.55rem);
+}
+
+.driver-price-reference-values strong,
+.driver-sheet-metrics strong {
+  font-size: 1.05rem;
+}
+
+.payment-method-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .38rem;
+  align-items: center;
+  padding: .55rem;
+  border: 1px dashed rgba(255,216,0,.55);
+  border-radius: .72rem;
+  color: #fff;
+  background: rgba(0,0,0,.24);
+}
+
+.payment-method-preview strong {
+  color: #ffd800;
+  font-size: .78rem;
+}
+
+.payment-method-preview span {
+  display: inline-flex;
+  padding: .25rem .5rem;
+  border-radius: 999px;
+  color: #111218;
+  background: #ffd800;
+  font-size: .72rem;
+  font-weight: 950;
+}
+
+.wallet-balance-card,
+.wallet-topup-card,
+.private-communication-card,
+.dispatch-tech-card {
+  display: grid;
+  gap: .7rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #111218;
+  border-radius: .9rem;
+  color: #111218;
+  background: #fff;
+}
+
+.wallet-balance-card {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: linear-gradient(135deg, #111218, #262730);
+}
+
+.wallet-balance-card span,
+.wallet-balance-card small {
+  color: #fff;
+}
+
+.wallet-balance-card strong {
+  display: block;
+  color: #ffd800;
+  font-size: clamp(1.6rem, 6vw, 2.45rem);
+  letter-spacing: -.06em;
+}
+
+.wallet-topup-card p {
+  margin: .15rem 0 0;
+  color: #5f6067;
+  font-size: .84rem;
+}
+
+.wallet-payment-methods {
+  color: #111218;
+  background: #fff7c2;
+}
+
+.wallet-payment-methods strong {
+  color: #111218;
+}
+
+.private-communication-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-color: #ffd800;
+  background: #111218;
+}
+
+.private-communication-card strong {
+  display: block;
+  color: #ffd800;
+  font-size: 1.05rem;
+}
+
+.private-communication-card p {
+  margin: .2rem 0 0;
+  color: #ededf2;
+  font-size: .82rem;
+  line-height: 1.35;
+}
+
+.private-communication-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  justify-content: flex-end;
+}
+
+.private-communication-actions button {
+  min-height: 2.25rem;
+  padding: .35rem .65rem;
+  border: 1px solid rgba(255,216,0,.65);
+  border-radius: 999px;
+  color: #ffd800;
+  background: rgba(255,216,0,.08);
+  font-weight: 950;
+}
+
+.dispatch-tech-card {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-color: #d5d5cc;
+  background: #fffdf3;
+}
+
+.dispatch-tech-card div {
+  display: grid;
+  gap: .14rem;
+}
+
+.dispatch-tech-card strong {
+  font-size: .9rem;
+}
+
+.dispatch-tech-card span {
+  color: #62636a;
+  font-size: .72rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.customer-app-actions {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .customer-app-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .customer-app-header .customer-mobile-brand {
+    min-width: 0;
+    max-width: 100%;
+    justify-content: center;
+  }
+
+  .customer-app-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .customer-app-actions .button,
+  .customer-mode-entry {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .customer-mode-entry {
+    grid-column: 1 / -1;
+  }
+
+  .wallet-balance-card,
+  .private-communication-card,
+  .dispatch-tech-card {
+    grid-template-columns: 1fr;
+  }
+
+  .private-communication-actions {
+    justify-content: stretch;
+  }
+
+  .private-communication-actions button {
+    flex: 1 1 5.5rem;
+  }
+}

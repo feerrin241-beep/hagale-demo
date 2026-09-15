@@ -153,6 +153,86 @@ public sealed class IdentityAuthenticationService(
         return ApplicationResult<AuthenticatedUserDto>.Success(await CreateAuthenticatedUserAsync(user, cancellationToken));
     }
 
+    public async Task<ApplicationResult<AuthenticatedUserDto>> CreateDemoGuestSessionAsync(CancellationToken cancellationToken = default)
+    {
+        if (!hostEnvironment.IsDevelopment() && !hostEnvironment.IsEnvironment("Demo"))
+        {
+            return ApplicationResult<AuthenticatedUserDto>.Failure("El acceso visitante solo está disponible en la demo.");
+        }
+
+        const string guestEmail = "visitante@hagale.demo";
+        var now = timeProvider.GetUtcNow();
+        var user = await userManager.FindByEmailAsync(guestEmail);
+
+        if (user is null)
+        {
+            user = new AppUser
+            {
+                Id = Guid.NewGuid(),
+                UserName = guestEmail,
+                Email = guestEmail,
+                EmailConfirmed = true,
+                FirstName = "Visitante",
+                LastName = "HÁGALE",
+                PhoneNumber = "+570000000000",
+                RegisteredAtUtc = now,
+                LastActivityAtUtc = now,
+                IsActive = true,
+                LockoutEnabled = true
+            };
+
+            var createResult = await userManager.CreateAsync(user);
+            if (!createResult.Succeeded)
+            {
+                return ApplicationResult<AuthenticatedUserDto>.Failure(BuildIdentityErrorMessage(
+                    createResult,
+                    "No fue posible crear el acceso visitante."));
+            }
+        }
+
+        user.EmailConfirmed = true;
+        user.IsActive = true;
+        user.LockoutEnd = null;
+        user.AccessFailedCount = 0;
+        user.LastActivityAtUtc = now;
+        var updateResult = await userManager.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+        {
+            return ApplicationResult<AuthenticatedUserDto>.Failure(BuildIdentityErrorMessage(
+                updateResult,
+                "No fue posible activar el acceso visitante."));
+        }
+
+        if (!await userManager.IsInRoleAsync(user, HagaleRoles.Customer))
+        {
+            var roleResult = await userManager.AddToRoleAsync(user, HagaleRoles.Customer);
+            if (!roleResult.Succeeded)
+            {
+                return ApplicationResult<AuthenticatedUserDto>.Failure(BuildIdentityErrorMessage(
+                    roleResult,
+                    "No fue posible preparar el acceso visitante."));
+            }
+        }
+
+        foreach (var roleName in new[] { HagaleRoles.Administrator, HagaleRoles.Driver })
+        {
+            if (!await userManager.IsInRoleAsync(user, roleName))
+            {
+                continue;
+            }
+
+            var removeResult = await userManager.RemoveFromRoleAsync(user, roleName);
+            if (!removeResult.Succeeded)
+            {
+                return ApplicationResult<AuthenticatedUserDto>.Failure(BuildIdentityErrorMessage(
+                    removeResult,
+                    "No fue posible limitar el acceso visitante."));
+            }
+        }
+
+        return ApplicationResult<AuthenticatedUserDto>.Success(await CreateAuthenticatedUserAsync(user, cancellationToken));
+    }
+
     public ExternalAuthProviderStatusDto GetGoogleProviderStatus()
     {
         var clientId = ResolveGoogleClientId();

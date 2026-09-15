@@ -56,6 +56,19 @@ public sealed class AuthController(IAuthenticationService authenticationService)
     }
 
     [AllowAnonymous]
+    [HttpPost("demo-guest")]
+    [ProducesResponseType<AuthenticatedUserDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AuthenticatedUserDto>> CreateDemoGuest(CancellationToken cancellationToken)
+    {
+        var result = await authenticationService.CreateDemoGuestSessionAsync(cancellationToken);
+
+        return result.IsSuccess
+            ? Ok(result.Value)
+            : this.BusinessRuleViolation("demoGuest", result.Error!);
+    }
+
+    [AllowAnonymous]
     [HttpGet("google/status")]
     [ProducesResponseType<ExternalAuthProviderStatusDto>(StatusCodes.Status200OK)]
     public ActionResult<ExternalAuthProviderStatusDto> GetGoogleStatus() =>
