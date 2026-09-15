@@ -68,6 +68,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDriverApplicationService, DriverApplicationService>();
         services.AddScoped<IRideRequestService, RideRequestService>();
         services.AddScoped<IRideChatService, RideChatService>();
+        services.AddScoped<IRideRatingService, RideRatingService>();
         services.AddScoped<IPricingService, PricingService>();
         services.AddScoped<IEmergencyContactService, EmergencyContactService>();
         services.AddScoped<IEmergencyServiceChannelService, EmergencyServiceChannelService>();

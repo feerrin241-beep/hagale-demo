@@ -357,6 +357,23 @@ public sealed class RideRequestService(
             completedRequests.FirstOrDefault()?.CompletedAtUtc);
     }
 
+    public async Task<IReadOnlyCollection<DriverRideRequestDto>> ListCompletedForDriverAsync(
+        Guid driverUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var driver = await driverRepository.GetByUserIdAsync(driverUserId, cancellationToken);
+        if (driver is null)
+        {
+            return [];
+        }
+
+        var completedRequests = await rideRequestRepository.ListCompletedByDriverProfileIdAsync(driver.Id, cancellationToken);
+        return completedRequests
+            .Take(12)
+            .Select(request => MapForDriver(request))
+            .ToArray();
+    }
+
     public async Task<ApplicationResult<DriverRideRequestDto>> AcceptAsync(
         Guid driverUserId,
         Guid rideRequestId,

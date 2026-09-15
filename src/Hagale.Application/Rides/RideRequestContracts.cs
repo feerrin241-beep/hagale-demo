@@ -140,6 +140,7 @@ public interface IRideRequestService
     Task<ApplicationResult<RideRequestDto>> RejectCounterOfferAsync(Guid customerUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<DriverRideRequestDto>> ListAvailableForDriverAsync(Guid driverUserId, decimal? maximumPickupDistanceKilometers = null, CancellationToken cancellationToken = default);
     Task<DriverRideRequestDto?> GetCurrentForDriverAsync(Guid driverUserId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<DriverRideRequestDto>> ListCompletedForDriverAsync(Guid driverUserId, CancellationToken cancellationToken = default);
     Task<DriverActivitySummaryDto> GetActivitySummaryAsync(Guid driverUserId, CancellationToken cancellationToken = default);
     Task<ApplicationResult<DriverRideRequestDto>> AcceptAsync(Guid driverUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
     Task<ApplicationResult<DriverRideRequestDto>> MakeCounterOfferAsync(Guid driverUserId, Guid rideRequestId, CreateCounterOfferCommand command, CancellationToken cancellationToken = default);

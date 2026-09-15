@@ -31,6 +31,11 @@ public sealed class DriverRideRequestsController(IRideRequestService rideRequest
         return request is null ? NoContent() : Ok(request);
     }
 
+    [HttpGet("completed")]
+    [ProducesResponseType<IReadOnlyCollection<DriverRideRequestDto>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyCollection<DriverRideRequestDto>>> ListCompleted(CancellationToken cancellationToken) =>
+        Ok(await rideRequestService.ListCompletedForDriverAsync(User.GetRequiredUserId(), cancellationToken));
+
     [HttpGet("activity-summary")]
     [ProducesResponseType<DriverActivitySummaryDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<DriverActivitySummaryDto>> GetActivitySummary(CancellationToken cancellationToken) =>

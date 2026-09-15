@@ -45,7 +45,10 @@ const state = {
   rideRequests: [],
   driverRideOffers: [],
   driverCurrentRideRequest: null,
+  driverCompletedRideRequests: [],
   driverActivitySummary: null,
+  rideRatings: {},
+  rideRatingLoadingIds: new Set(),
   pricingRules: [],
   emergencyContacts: [],
   emergencyServiceChannels: [],
@@ -791,14 +794,16 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
   const previousIds = new Set((state.driverRideOffers || []).map(offer => offer.id));
   const previousCurrentRideId = state.driverCurrentRideRequest?.id || null;
   const previousCurrentRideStatus = state.driverCurrentRideRequest?.status || null;
-  const [offers, currentRequest, application, activitySummary] = await Promise.all([
+  const [offers, currentRequest, application, activitySummary, completedRequests] = await Promise.all([
     request(getDispatchOffersUrl()),
     request("/driver/ride-requests/current"),
     request("/driver-application/me"),
-    request("/driver/ride-requests/activity-summary")
+    request("/driver/ride-requests/activity-summary"),
+    request("/driver/ride-requests/completed")
   ]);
   state.driverRideOffers = offers;
   state.driverCurrentRideRequest = currentRequest;
+  state.driverCompletedRideRequests = completedRequests;
   state.application = application;
   state.driverActivitySummary = activitySummary;
   if (state.selectedDriverOfferId && !offers.some(offer => offer.id === state.selectedDriverOfferId)) {
@@ -2821,17 +2826,20 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
       state.customerRideTracking = null;
     }
     if (state.profile.roles.includes("Driver")) {
-      const [driverRideOffers, driverCurrentRideRequest, driverActivitySummary] = await Promise.all([
+      const [driverRideOffers, driverCurrentRideRequest, driverActivitySummary, driverCompletedRideRequests] = await Promise.all([
         request(getDispatchOffersUrl()),
         request("/driver/ride-requests/current"),
-        request("/driver/ride-requests/activity-summary")
+        request("/driver/ride-requests/activity-summary"),
+        request("/driver/ride-requests/completed")
       ]);
       state.driverRideOffers = driverRideOffers;
       state.driverCurrentRideRequest = driverCurrentRideRequest;
       state.driverActivitySummary = driverActivitySummary;
+      state.driverCompletedRideRequests = driverCompletedRideRequests;
     } else {
       state.driverRideOffers = [];
       state.driverCurrentRideRequest = null;
+      state.driverCompletedRideRequests = [];
       state.driverActivitySummary = null;
     }
     state.emergencyContacts = await request("/safety/emergency-contacts/me");
@@ -3104,6 +3112,7 @@ function renderDashboard() {
   bindDriverEvents();
   bindAdminEvents();
   bindRideChatEvents();
+  bindRideRatingEvents();
   syncDispatchPolling(isDriverMode, driver);
   syncCustomerTrackingPolling(!isDriverMode && profile.roles.includes("Customer"));
   syncRideRealtime();
@@ -3111,6 +3120,7 @@ function renderDashboard() {
   mountCustomerTrackingMap();
   mountCustomerRideMap();
   syncVisibleRideChats();
+  syncVisibleRideRatings();
   activateRevealAnimations();
 }
 
@@ -3579,14 +3589,121 @@ function renderDriverRecognitionPanel(summary, driver) {
     </section>`;
 }
 
+function rideRatingStars(score) {
+  const value = Math.max(0, Math.min(5, Number(score) || 0));
+  return `${"★".repeat(value)}${"☆".repeat(5 - value)}`;
+}
+
+function renderRideRatingWidget(rideRequest, audience = "customer") {
+  if (rideRequest?.status !== "Completed" || !rideRequest.id) return "";
+  const rideId = rideRequest.id;
+  const ratings = state.rideRatings[rideId] || [];
+  const myRating = ratings.find(rating => rating.raterUserId === state.profile?.userId);
+  const otherRating = ratings.find(rating => rating.raterUserId !== state.profile?.userId);
+  const targetLabel = audience === "driver" ? "cliente" : "conductor";
+  const average = ratings.length
+    ? (ratings.reduce((sum, rating) => sum + Number(rating.score || 0), 0) / ratings.length).toFixed(1)
+    : null;
+
+  if (myRating) {
+    return `
+      <section class="ride-rating-widget is-complete">
+        <div><span class="eyebrow">Reputación HÁGALE</span><strong>Tu calificación: <span class="rating-stars">${rideRatingStars(myRating.score)}</span></strong><small>${average ? `Promedio de la carrera: ${average}/5` : ""}</small></div>
+        ${otherRating ? `<span class="rating-received"><strong>${rideRatingStars(otherRating.score)}</strong><small>Calificación recibida</small></span>` : '<span class="rating-pending">La otra persona aún no califica.</span>'}
+      </section>`;
+  }
+
+  return `
+    <section class="ride-rating-widget">
+      <div class="ride-rating-heading"><div><span class="eyebrow">Servicio finalizado</span><strong>¿Cómo fue tu experiencia con el ${targetLabel}?</strong><small>Tu calificación ayuda a construir confianza en HÁGALE.</small></div>${otherRating ? `<span class="rating-received"><strong>${rideRatingStars(otherRating.score)}</strong><small>Ya recibiste una calificación</small></span>` : ""}</div>
+      <form class="ride-rating-form" data-ride-rating-form="${escapeHtml(rideId)}" data-rating-audience="${escapeHtml(audience)}">
+        <div class="ride-rating-stars" role="radiogroup" aria-label="Calificación de 1 a 5 estrellas">
+          ${[5, 4, 3, 2, 1].map(score => `<label><input type="radio" name="rating-${escapeHtml(rideId)}" value="${score}" ${score === 5 ? "checked" : ""}><span>${rideRatingStars(score)}</span></label>`).join("")}
+        </div>
+        <textarea name="comment" maxlength="240" rows="2" placeholder="Comentario opcional"></textarea>
+        <button class="button button-primary small" type="submit">Guardar calificación</button>
+      </form>
+    </section>`;
+}
+
+async function loadRideRatings(rideRequestId) {
+  const rideId = String(rideRequestId || "");
+  if (!rideId || !state.token || state.rideRatingLoadingIds.has(rideId)) return;
+  state.rideRatingLoadingIds.add(rideId);
+  try {
+    state.rideRatings[rideId] = await request(`/ride-requests/${rideId}/ratings`);
+    const form = app.querySelector(`[data-ride-rating-form="${rideId}"]`);
+    const ratingNode = form?.closest(".ride-rating-widget");
+    if (ratingNode) {
+      const ride = [...(state.rideRequests || []), ...(state.driverCompletedRideRequests || [])].find(item => item.id === rideId);
+      if (ride) {
+        ratingNode.outerHTML = renderRideRatingWidget(ride, form.dataset.ratingAudience || "customer");
+        bindRideRatingEvents();
+      }
+    }
+  } catch {
+    // El siguiente refresco vuelve a consultar el estado autorizado.
+  } finally {
+    state.rideRatingLoadingIds.delete(rideId);
+  }
+}
+
+function syncVisibleRideRatings() {
+  app.querySelectorAll("[data-ride-rating-form]").forEach(form => {
+    void loadRideRatings(form.dataset.rideRatingForm);
+  });
+}
+
+async function submitRideRating(event, form) {
+  event.preventDefault();
+  const rideId = form.dataset.rideRatingForm;
+  const formData = new FormData(form);
+  const score = Number(formData.get(`rating-${rideId}`));
+  const comment = String(formData.get("comment") || "").trim();
+  const button = form.querySelector("button[type='submit']");
+  if (!rideId || !Number.isInteger(score) || score < 1 || score > 5) {
+    showNotice("Selecciona entre 1 y 5 estrellas.", true);
+    return;
+  }
+
+  if (button) button.disabled = true;
+  try {
+    const created = await request(`/ride-requests/${rideId}/ratings`, {
+      method: "POST",
+      data: { score, comment: comment || null }
+    });
+    state.rideRatings[rideId] = [...(state.rideRatings[rideId] || []), created];
+    renderDashboard();
+    showNotice("Calificación guardada. Gracias por ayudar a mejorar HÁGALE.");
+  } catch (error) {
+    showNotice(error.message || "No fue posible guardar la calificación.", true);
+  } finally {
+    if (button?.isConnected) button.disabled = false;
+  }
+}
+
+function bindRideRatingEvents() {
+  app.querySelectorAll("[data-ride-rating-form]").forEach(form => {
+    if (form.dataset.ratingBound === "true") return;
+    form.dataset.ratingBound = "true";
+    form.addEventListener("submit", event => submitRideRating(event, form));
+  });
+}
+
 function renderDriverRatingsPreview() {
+  const completed = (state.driverCompletedRideRequests || []).slice(0, 3);
+  const completedList = completed.length
+    ? `<ul class="driver-recent-ratings">${completed.map(ride => `
+        <li><div><strong>${escapeHtml(ride.destinationAddress)}</strong><small>${ride.completedAtUtc ? formatDateTime(ride.completedAtUtc) : "Servicio finalizado"} · ${formatCop(ride.proposedPriceCop)}</small></div>${renderRideRatingWidget(ride, "driver")}</li>`).join("")}</ul>`
+    : '<p class="small-text muted">Cuando finalices una carrera aparecerá aquí la opción para calificar al cliente.</p>';
   return `
     <section class="driver-rating-card">
-      <div><span class="eyebrow">Calificaciones</span><h3>Reputación compartida</h3><p>La siguiente fase permitirá que cliente y conductor se califiquen al finalizar el servicio.</p></div>
+      <div><span class="eyebrow">Calificaciones</span><h3>Reputación compartida</h3><p>Cliente y conductor se califican después de cada servicio finalizado.</p></div>
       <div class="rating-preview-grid">
         <div><strong>★ —</strong><span>Como conductor</span></div>
         <div><strong>★ —</strong><span>Clientes atendidos</span></div>
       </div>
+      ${completedList}
     </section>`;
 }
 
@@ -3762,6 +3879,7 @@ function renderCustomerRideHistoryItem(rideRequest, { showTimeline = false } = {
         ${rideRequest.counterOfferPriceCop ? `<p class="customer-history-note">Contraoferta: ${formatCop(rideRequest.counterOfferPriceCop)}.</p>` : ""}
         ${rideRequest.cancellationReason ? `<p class="customer-history-note">Cancelación: ${escapeHtml(rideRequest.cancellationReason)}</p>` : ""}
         ${showTimeline ? renderJourneyTimeline(rideRequest) : ""}
+        ${renderRideRatingWidget(rideRequest, "customer")}
       </div>
       ${actions ? `<div class="customer-history-actions">${actions}</div>` : ""}
     </li>`;
@@ -5087,7 +5205,10 @@ function signOut(notify = true) {
   state.rideRequests = [];
   state.driverRideOffers = [];
   state.driverCurrentRideRequest = null;
+  state.driverCompletedRideRequests = [];
   state.driverActivitySummary = null;
+  state.rideRatings = {};
+  state.rideRatingLoadingIds.clear();
   state.selectedDriverOfferId = null;
   state.pricingRules = [];
   state.emergencyContacts = [];
