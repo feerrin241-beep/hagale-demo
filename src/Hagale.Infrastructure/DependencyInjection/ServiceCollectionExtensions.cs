@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Hagale.Infrastructure.DependencyInjection;
 
@@ -26,18 +27,21 @@ public static class ServiceCollectionExtensions
         }
 
         var databaseProvider = configuration["Database:Provider"]?.Trim();
+        var usesPostgresConnectionUri = IsPostgresConnectionUri(connectionString);
         services.AddDbContext<HagaleDbContext>(options =>
         {
-            if (string.Equals(databaseProvider, "InMemory", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(databaseProvider, "InMemory", StringComparison.OrdinalIgnoreCase) &&
+                !usesPostgresConnectionUri)
             {
                 options.UseInMemoryDatabase(connectionString);
                 return;
             }
 
             if (string.Equals(databaseProvider, "Postgres", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(databaseProvider, "PostgreSQL", StringComparison.OrdinalIgnoreCase))
+                string.Equals(databaseProvider, "PostgreSQL", StringComparison.OrdinalIgnoreCase) ||
+                usesPostgresConnectionUri)
             {
-                options.UseNpgsql(connectionString);
+                options.UseNpgsql(NormalizePostgresConnectionString(connectionString));
                 return;
             }
 
@@ -84,5 +88,41 @@ public static class ServiceCollectionExtensions
         services.AddHealthChecks().AddDbContextCheck<HagaleDbContext>();
 
         return services;
+    }
+
+    private static bool IsPostgresConnectionUri(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var connectionUri) &&
+        (string.Equals(connectionUri.Scheme, "postgres", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(connectionUri.Scheme, "postgresql", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Neon displays libpq-style connection URIs. Npgsql and EF Core use the
+    /// standard keyword format, so we convert the URI without logging it.
+    /// </summary>
+    private static string NormalizePostgresConnectionString(string value)
+    {
+        if (!IsPostgresConnectionUri(value) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var connectionUri))
+        {
+            return value;
+        }
+
+        var userInfo = Uri.UnescapeDataString(connectionUri.UserInfo);
+        var separatorIndex = userInfo.IndexOf(':', StringComparison.Ordinal);
+        var username = separatorIndex < 0 ? userInfo : userInfo[..separatorIndex];
+        var password = separatorIndex < 0 ? string.Empty : userInfo[(separatorIndex + 1)..];
+        var databaseName = Uri.UnescapeDataString(connectionUri.AbsolutePath.Trim('/'));
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = connectionUri.Host,
+            Port = connectionUri.IsDefaultPort ? 5432 : connectionUri.Port,
+            Database = databaseName,
+            Username = username,
+            Password = password
+        };
+        builder["SSL Mode"] = "Require";
+
+        return builder.ConnectionString;
     }
 }
