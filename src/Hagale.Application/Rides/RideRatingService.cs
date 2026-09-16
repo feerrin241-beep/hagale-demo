@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Hagale.Application.Common;
 using Hagale.Application.Contracts;
 using Hagale.Domain.Rides;
@@ -6,19 +5,16 @@ using Hagale.Domain.Rides;
 namespace Hagale.Application.Rides;
 
 /// <summary>
-/// Reputación bilateral para la demo. Cada participante puede calificar una
-/// sola vez cuando la carrera finaliza; más adelante se reemplaza por tablas
-/// persistentes y moderación.
+/// Reputación bilateral. Cada participante puede calificar una sola vez cuando
+/// la carrera finaliza y las calificaciones quedan guardadas de forma persistente.
 /// </summary>
 public sealed class RideRatingService(
     IRideRequestRepository rideRequestRepository,
     IDriverRepository driverRepository,
+    IRideRatingRepository rideRatingRepository,
     TimeProvider timeProvider) : IRideRatingService
 {
     private const int MaximumCommentLength = 240;
-
-    private static readonly ConcurrentDictionary<Guid, List<RideRatingDto>> Ratings = new();
-    private static readonly ConcurrentDictionary<Guid, object> RatingLocks = new();
 
     public async Task<ApplicationResult<IReadOnlyCollection<RideRatingDto>>> ListAsync(
         Guid userId,
@@ -31,11 +27,12 @@ public sealed class RideRatingService(
             return ApplicationResult<IReadOnlyCollection<RideRatingDto>>.Failure(participant.Error!);
         }
 
-        var ratings = Ratings.TryGetValue(rideRequestId, out var stored)
-            ? SnapshotRatings(rideRequestId, stored)
-            : Array.Empty<RideRatingDto>();
+        var ratings = await rideRatingRepository.ListByRideRequestIdAsync(
+            rideRequestId,
+            cancellationToken);
 
-        return ApplicationResult<IReadOnlyCollection<RideRatingDto>>.Success(ratings);
+        return ApplicationResult<IReadOnlyCollection<RideRatingDto>>.Success(
+            ratings.Select(ToDto).ToArray());
     }
 
     public async Task<ApplicationResult<RideRatingDto>> SubmitAsync(
@@ -72,8 +69,16 @@ public sealed class RideRatingService(
                 $"El comentario no puede superar {MaximumCommentLength} caracteres.");
         }
 
-        var rating = new RideRatingDto(
-            Guid.NewGuid(),
+        if (await rideRatingRepository.ExistsByRideAndRaterAsync(
+                ride.Id,
+                userId,
+                participant.RaterRole!,
+                cancellationToken))
+        {
+            return ApplicationResult<RideRatingDto>.Failure("Ya calificaste este servicio.");
+        }
+
+        var rating = new RideRating(
             ride.Id,
             userId,
             participant.RaterRole!,
@@ -81,19 +86,10 @@ public sealed class RideRatingService(
             command.Score,
             comment,
             timeProvider.GetUtcNow());
+        rideRatingRepository.Add(rating);
+        await rideRatingRepository.SaveChangesAsync(cancellationToken);
 
-        var ratings = Ratings.GetOrAdd(rideRequestId, _ => []);
-        lock (RatingLocks.GetOrAdd(rideRequestId, _ => new object()))
-        {
-            if (ratings.Any(item => item.RaterUserId == userId && item.RaterRole == participant.RaterRole))
-            {
-                return ApplicationResult<RideRatingDto>.Failure("Ya calificaste este servicio.");
-            }
-
-            ratings.Add(rating);
-        }
-
-        return ApplicationResult<RideRatingDto>.Success(rating);
+        return ApplicationResult<RideRatingDto>.Success(ToDto(rating));
     }
 
     private async Task<ParticipantResult> GetParticipantAsync(
@@ -126,17 +122,16 @@ public sealed class RideRatingService(
         return ParticipantResult.Success(ride, "Driver", "Customer");
     }
 
-    private static IReadOnlyCollection<RideRatingDto> SnapshotRatings(
-        Guid rideRequestId,
-        List<RideRatingDto> ratings)
-    {
-        lock (RatingLocks.GetOrAdd(rideRequestId, _ => new object()))
-        {
-            return ratings
-                .OrderBy(rating => rating.RatedAtUtc)
-                .ToArray();
-        }
-    }
+    private static RideRatingDto ToDto(RideRating rating) =>
+        new(
+            rating.Id,
+            rating.RideRequestId,
+            rating.RaterUserId,
+            rating.RaterRole,
+            rating.RatedRole,
+            rating.Score,
+            rating.Comment,
+            rating.RatedAtUtc);
 
     private sealed record ParticipantResult(
         bool IsSuccess,

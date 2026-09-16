@@ -17,6 +17,8 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<DriverDocument> DriverDocuments => Set<DriverDocument>();
     public DbSet<RideRequest> RideRequests => Set<RideRequest>();
+    public DbSet<RideChatMessage> RideChatMessages => Set<RideChatMessage>();
+    public DbSet<RideRating> RideRatings => Set<RideRating>();
     public DbSet<PricingRule> PricingRules => Set<PricingRule>();
     public DbSet<EmergencyContact> EmergencyContacts => Set<EmergencyContact>();
     public DbSet<EmergencyServiceChannel> EmergencyServiceChannels => Set<EmergencyServiceChannel>();
@@ -149,6 +151,38 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
                 .WithMany()
                 .HasForeignKey(request => request.CustomerUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<RideChatMessage>(entity =>
+        {
+            entity.ToTable("RideChatMessages");
+            entity.HasKey(message => message.Id);
+            entity.Property(message => message.SenderRole).HasMaxLength(30).IsRequired();
+            entity.Property(message => message.SenderName).HasMaxLength(200).IsRequired();
+            entity.Property(message => message.Message).HasMaxLength(500).IsRequired();
+            entity.Property(message => message.SentAtUtc).IsRequired();
+            entity.HasIndex(message => new { message.RideRequestId, message.SentAtUtc });
+            entity.HasIndex(message => message.SenderUserId);
+            entity.HasOne<RideRequest>()
+                .WithMany()
+                .HasForeignKey(message => message.RideRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<RideRating>(entity =>
+        {
+            entity.ToTable("RideRatings");
+            entity.HasKey(rating => rating.Id);
+            entity.Property(rating => rating.RaterRole).HasMaxLength(30).IsRequired();
+            entity.Property(rating => rating.RatedRole).HasMaxLength(30).IsRequired();
+            entity.Property(rating => rating.Comment).HasMaxLength(240);
+            entity.Property(rating => rating.RatedAtUtc).IsRequired();
+            entity.HasIndex(rating => new { rating.RideRequestId, rating.RaterUserId, rating.RaterRole }).IsUnique();
+            entity.HasIndex(rating => new { rating.RideRequestId, rating.RatedAtUtc });
+            entity.HasOne<RideRequest>()
+                .WithMany()
+                .HasForeignKey(rating => rating.RideRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<PricingRule>(entity =>

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Hagale.Application.Contracts;
 using Hagale.Application.Common;
 using Hagale.Domain.Rides;
@@ -7,12 +6,13 @@ namespace Hagale.Application.Rides;
 
 /// <summary>
 /// Chat privado de demostración asociado a una carrera. La autorización se
-/// comprueba contra los participantes reales de la solicitud; los mensajes se
-/// mantienen en memoria hasta conectar el almacenamiento persistente del chat.
+/// comprueba contra los participantes reales de la solicitud y persiste cada
+/// mensaje para que sobreviva a reinicios de la aplicación.
 /// </summary>
 public sealed class RideChatService(
     IRideRequestRepository rideRequestRepository,
     IDriverRepository driverRepository,
+    IRideChatMessageRepository rideChatMessageRepository,
     IUserDirectory userDirectory,
     TimeProvider timeProvider,
     IRideRealtimeNotifier? realtimeNotifier = null) : IRideChatService
@@ -20,8 +20,6 @@ public sealed class RideChatService(
     private const int MaximumMessageLength = 500;
     private const int MaximumMessagesPerRide = 200;
 
-    private static readonly ConcurrentDictionary<Guid, List<RideChatMessageDto>> Messages = new();
-    private static readonly ConcurrentDictionary<Guid, object> MessageLocks = new();
     private static readonly HashSet<RideRequestStatus> ActiveChatStatuses =
     [
         RideRequestStatus.Accepted,
@@ -44,10 +42,12 @@ public sealed class RideChatService(
             return ApplicationResult<IReadOnlyCollection<RideChatMessageDto>>.Failure(participant.Error!);
         }
 
-        var messages = Messages.TryGetValue(rideRequestId, out var stored)
-            ? SnapshotMessages(rideRequestId, stored)
-            : Array.Empty<RideChatMessageDto>();
-        return ApplicationResult<IReadOnlyCollection<RideChatMessageDto>>.Success(messages);
+        var messages = await rideChatMessageRepository.ListByRideRequestIdAsync(
+            rideRequestId,
+            MaximumMessagesPerRide,
+            cancellationToken);
+        return ApplicationResult<IReadOnlyCollection<RideChatMessageDto>>.Success(
+            messages.Select(ToDto).ToArray());
     }
 
     public async Task<ApplicationResult<RideChatMessageDto>> SendAsync(
@@ -82,24 +82,15 @@ public sealed class RideChatService(
         }
 
         var ride = participant.Ride!;
-        var chatMessage = new RideChatMessageDto(
-            Guid.NewGuid(),
+        var chatMessage = new RideChatMessage(
             ride.Id,
             userId,
             participant.Role!,
             participant.Name!,
             message,
             timeProvider.GetUtcNow());
-
-        var messages = Messages.GetOrAdd(rideRequestId, _ => []);
-        lock (MessageLocks.GetOrAdd(rideRequestId, _ => new object()))
-        {
-            messages.Add(chatMessage);
-            if (messages.Count > MaximumMessagesPerRide)
-            {
-                messages.RemoveRange(0, messages.Count - MaximumMessagesPerRide);
-            }
-        }
+        rideChatMessageRepository.Add(chatMessage);
+        await rideChatMessageRepository.SaveChangesAsync(cancellationToken);
 
         var driver = await driverRepository.GetByIdAsync(ride.AssignedDriverProfileId.Value, cancellationToken);
         await realtimeNotifier.NotifyRideChatMessageAsync(
@@ -108,7 +99,7 @@ public sealed class RideChatService(
             ride.Id,
             cancellationToken);
 
-        return ApplicationResult<RideChatMessageDto>.Success(chatMessage);
+        return ApplicationResult<RideChatMessageDto>.Success(ToDto(chatMessage));
     }
 
     private async Task<ParticipantResult> GetParticipantAsync(
@@ -155,17 +146,15 @@ public sealed class RideChatService(
         return string.IsNullOrWhiteSpace(name) ? fallback : name;
     }
 
-    private static IReadOnlyCollection<RideChatMessageDto> SnapshotMessages(
-        Guid rideRequestId,
-        List<RideChatMessageDto> messages)
-    {
-        lock (MessageLocks.GetOrAdd(rideRequestId, _ => new object()))
-        {
-            return messages
-                .OrderBy(message => message.SentAtUtc)
-                .ToArray();
-        }
-    }
+    private static RideChatMessageDto ToDto(RideChatMessage message) =>
+        new(
+            message.Id,
+            message.RideRequestId,
+            message.SenderUserId,
+            message.SenderRole,
+            message.SenderName,
+            message.Message,
+            message.SentAtUtc);
 
     private sealed record ParticipantResult(
         bool IsSuccess,
