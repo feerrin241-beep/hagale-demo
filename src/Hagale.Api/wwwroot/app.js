@@ -3517,7 +3517,7 @@ function renderDriverOfferSheet(offer) {
       </div>
       ${renderDriverPriceReference(offer)}
       ${renderRidePreferenceTags(offer)}
-      ${renderPrivateCommunicationCard(rideRequest)}
+      ${renderPrivateCommunicationCard(offer)}
       <p class="driver-sheet-note">La tarifa es la oferta del pasajero. Estas son distancias directas; el tiempo y la ruta por calles se añadirán cuando integremos navegación.</p>
       ${renderDriverNavigationAction(offer, "pickup")}
       <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}">Aceptar por ${formatCop(offer.proposedPriceCop)}</button>
