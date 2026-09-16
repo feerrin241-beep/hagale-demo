@@ -3454,8 +3454,9 @@ function renderDriverRideRequestsPanel() {
     const navigationTarget = currentRequest.status === "InProgress" ? "destination" : "pickup";
     const showNavigation = ["Accepted", "DriverEnRoute", "DriverArrived", "InProgress"].includes(currentRequest.status);
     return `
-      <article id="driver-requests" class="driver-active-card driver-active-journey-card" data-reveal>
-        <div class="driver-active-heading"><div><span class="eyebrow">Servicio asignado</span><h2>${currentRequest.status === "Completed" ? "Servicio finalizado" : "Tu recorrido actual"}</h2><p>${journeyDescription}</p></div>${statusBadge(currentRequest.status)}</div>
+      <article id="driver-requests" class="driver-active-card driver-active-journey-card ${currentRequest.status === "Accepted" ? "is-accepted" : ""}" data-reveal>
+        <div class="driver-active-heading"><div><span class="eyebrow">Servicio asignado</span><h2>${currentRequest.status === "Completed" ? "Servicio finalizado" : currentRequest.status === "Accepted" ? "¡Servicio aceptado!" : "Tu recorrido actual"}</h2><p>${journeyDescription}</p></div>${statusBadge(currentRequest.status)}</div>
+        ${currentRequest.status === "Accepted" ? '<div class="driver-accepted-banner"><strong>✓ ACEPTADO</strong><span>El pasajero ya recibió tu confirmación.</span></div>' : ""}
         ${renderDriverJourneyStageAlert(currentRequest, journeyStage)}
         <div class="driver-route-card">
           <div class="route-stop route-stop-pickup"><span>RECOGIDA · A</span><strong>${escapeHtml(currentRequest.pickupAddress)}</strong></div>
