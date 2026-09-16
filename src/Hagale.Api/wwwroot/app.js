@@ -2891,10 +2891,6 @@ function getCustomerPanelItems({ profile, driver, isAdministrator, hasDriverRole
     items.push({ id: "driver-mode", label: "Modo conductor", meta: "Cambiar", mode: "Driver" });
   }
 
-  if (isAdministrator) {
-    items.push({ id: "admin", label: "Centro de control", meta: "Revisión" });
-  }
-
   items.push(
     { id: "profile", label: "Perfil", meta: "Cuenta" },
     { id: "safety", label: "Seguridad", meta: "Contactos" }
@@ -2915,14 +2911,14 @@ function resolveCustomerPanel(items, hasActiveCustomerRide) {
   return state.customerNav;
 }
 
-function renderCustomerAppHeader(profile, hasDriverRole) {
+function renderCustomerAppHeader(profile, hasDriverRole, isAdministrator) {
   return `
     <header class="customer-app-header" data-reveal>
       <a class="customer-mobile-brand" href="/" aria-label="HÁGALE, inicio"><img class="hagale-logo-image customer-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"></a>
       <div class="customer-app-actions">
         ${renderInstallAppButton("customer-install-button")}
         ${hasDriverRole ? '<button class="button customer-mode-entry" type="button" data-set-mode="Driver"><span>Modo</span><strong>Conductor</strong></button>' : ""}
-
+        ${isAdministrator ? '<button class="button button-secondary small customer-admin-entry" type="button" data-open-admin>Administrador</button>' : ""}
         <button class="button button-secondary small" type="button" data-customer-nav="profile">Mi cuenta</button>
         <button class="button button-quiet small" type="button" data-sign-out>Salir</button>
       </div>
@@ -3073,7 +3069,7 @@ function renderDashboard() {
       </section>`
     : `
       <section class="shell dashboard-shell customer-shell customer-panel-shell">
-        ${renderCustomerAppHeader(profile, hasDriverRole)}
+        ${renderCustomerAppHeader(profile, hasDriverRole, isAdministrator)}
         ${modeHero}
         ${renderCustomerPanelNav(customerPanelItems, activeCustomerPanel)}
         <main class="customer-panel-stage stack" data-active-customer-panel="${escapeHtml(activeCustomerPanel)}">

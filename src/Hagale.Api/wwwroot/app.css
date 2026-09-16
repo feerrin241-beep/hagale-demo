@@ -6008,3 +6008,36 @@ body.welcome-view {
   .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-actions .button-primary { min-height: 3.5rem; font-size: 1.03rem; font-weight: 1000; }
   .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-footer { border-color: #30313a; }
 }
+
+/* Estados cortos y contenidos: DESCONECTADO no puede desbordar el óvalo. */
+.driver-availability-toggle,
+.driver-live-state {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+@media (max-width: 760px) {
+  .driver-mobile-header .driver-availability-toggle > .driver-mobile-status-main {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .driver-mobile-header .driver-availability-toggle > .driver-mobile-status-main strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: clamp(.62rem, 2.7vw, .8rem);
+    letter-spacing: -.035em;
+  }
+
+  .driver-mobile-header .driver-availability-toggle > small {
+    max-width: 100%;
+  }
+
+  .customer-admin-entry {
+    font-weight: 1000;
+  }
+}
