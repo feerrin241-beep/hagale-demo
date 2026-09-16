@@ -2892,7 +2892,7 @@ function getCustomerPanelItems({ profile, driver, isAdministrator, hasDriverRole
   }
 
   if (isAdministrator) {
-    items.push({ id: "admin", label: "Admin", meta: "Revisión" });
+    items.push({ id: "admin", label: "Centro de control", meta: "Revisión" });
   }
 
   items.push(
@@ -2915,15 +2915,15 @@ function resolveCustomerPanel(items, hasActiveCustomerRide) {
   return state.customerNav;
 }
 
-function renderCustomerAppHeader(profile, hasDriverRole, isAdministrator) {
+function renderCustomerAppHeader(profile, hasDriverRole) {
   return `
     <header class="customer-app-header" data-reveal>
       <a class="customer-mobile-brand" href="/" aria-label="HÁGALE, inicio"><img class="hagale-logo-image customer-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"></a>
       <div class="customer-app-actions">
         ${renderInstallAppButton("customer-install-button")}
         ${hasDriverRole ? '<button class="button customer-mode-entry" type="button" data-set-mode="Driver"><span>Modo</span><strong>Conductor</strong></button>' : ""}
-        ${isAdministrator ? '<button class="button button-secondary small" type="button" data-customer-nav="admin">Admin</button>' : ""}
-        <button class="button button-secondary small" type="button" data-customer-nav="profile">${escapeHtml(profile.firstName)}</button>
+
+        <button class="button button-secondary small" type="button" data-customer-nav="profile">Mi cuenta</button>
         <button class="button button-quiet small" type="button" data-sign-out>Salir</button>
       </div>
     </header>`;
@@ -3073,7 +3073,7 @@ function renderDashboard() {
       </section>`
     : `
       <section class="shell dashboard-shell customer-shell customer-panel-shell">
-        ${renderCustomerAppHeader(profile, hasDriverRole, isAdministrator)}
+        ${renderCustomerAppHeader(profile, hasDriverRole)}
         ${modeHero}
         ${renderCustomerPanelNav(customerPanelItems, activeCustomerPanel)}
         <main class="customer-panel-stage stack" data-active-customer-panel="${escapeHtml(activeCustomerPanel)}">

@@ -104,5 +104,17 @@ public static class DevelopmentAdministratorBootstrapper
                 throw new InvalidOperationException("No fue posible asignar el rol de administrador de desarrollo.");
             }
         }
+
+        // La cuenta que administra la demo también debe poder probar el flujo
+        // completo de cliente, incluido pedir una moto. Sin este rol, el API
+        // protege correctamente la ruta de solicitudes con un 403.
+        if (!await userManager.IsInRoleAsync(administrator, HagaleRoles.Customer))
+        {
+            var customerRoleResult = await userManager.AddToRoleAsync(administrator, HagaleRoles.Customer);
+            if (!customerRoleResult.Succeeded)
+            {
+                throw new InvalidOperationException("No fue posible asignar el rol de cliente al administrador de desarrollo.");
+            }
+        }
     }
 }

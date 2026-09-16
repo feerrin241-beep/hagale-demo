@@ -5907,3 +5907,104 @@ body.welcome-view {
     width: 100%;
   }
 }
+
+/* Pantalla cliente 9:16: la solicitud ocupa la pantalla útil del teléfono.
+   El negro HÁGALE elimina los márgenes blancos y cada bloque conserva contraste. */
+@media (max-width: 760px) {
+  body.customer-mode,
+  body.customer-mode #app,
+  body.customer-mode .customer-panel-shell {
+    min-height: 100svh;
+    background: #050506;
+  }
+
+  .customer-panel-shell {
+    width: 100%;
+    max-width: none;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+
+  .customer-panel-nav {
+    gap: .45rem;
+    padding: .55rem .8rem;
+    border-color: #30313a;
+    background: #111218;
+  }
+
+  .customer-panel-tab {
+    flex-basis: 9.15rem;
+    min-height: 3.15rem;
+    border-color: #3a3b44;
+    border-radius: .75rem;
+    color: #fff;
+    background: #202127;
+  }
+
+  .customer-panel-tab small { color: #d4d4da; font-weight: 900; }
+  .customer-panel-tab.is-active,
+  .customer-panel-tab:hover { color: #111218; background: #ffd800; }
+  .customer-panel-tab.is-active small,
+  .customer-panel-tab:hover small { color: #111218; }
+
+  .customer-panel-stage {
+    min-height: calc(100svh - 10rem);
+    padding: 0;
+    background: #050506;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card {
+    min-height: calc(100svh - 10rem);
+    margin: 0;
+    padding: 1rem max(1rem, env(safe-area-inset-right)) 1.25rem max(1rem, env(safe-area-inset-left));
+    border: 0;
+    border-top: 4px solid #ffd800;
+    border-radius: 0;
+    color: #fff;
+    background:
+      radial-gradient(circle at 100% 0, rgba(255,216,0,.15), transparent 13rem),
+      #08090c;
+    box-shadow: none;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .eyebrow { color: #ffd800; font-weight: 950; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > h2,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading h3 { color: #fff; font-weight: 1000; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .muted,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading p,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-footer span { color: #dedee5; font-weight: 750; }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage { gap: .85rem; margin-top: .9rem; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading { padding: 0; }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form {
+    width: calc(100% + 2rem);
+    margin: .75rem -1rem 0;
+    padding: 1rem;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field {
+    padding: .85rem;
+    border-width: 2px;
+    background: #fff;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form label,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form input,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form select {
+    color: #050506;
+    font-weight: 950;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form input,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form select {
+    min-height: 3rem;
+    border-width: 2px;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form .small-text.muted { color: #31323a; font-weight: 800; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-actions .button-primary { min-height: 3.5rem; font-size: 1.03rem; font-weight: 1000; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-footer { border-color: #30313a; }
+}

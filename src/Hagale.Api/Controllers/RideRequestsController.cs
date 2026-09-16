@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Hagale.Api.Controllers;
 
 [ApiController]
-[Authorize(Roles = HagaleRoles.Customer)]
+[Authorize(Roles = HagaleRoles.Customer + "," + HagaleRoles.Administrator)]
 [Route("api/v1/ride-requests")]
 public sealed class RideRequestsController(IRideRequestService rideRequestService) : ControllerBase
 {
