@@ -4022,6 +4022,7 @@ function renderCustomerRideLocationsStep() {
           <label class="sub-field-label" for="ride-destination-neighborhood">Barrio o referencia del destino</label>
           <input id="ride-destination-neighborhood" name="destinationNeighborhood" value="${escapeHtml(draft.destinationNeighborhood)}" maxlength="120" autocomplete="address-level3" placeholder="Ej.: Provenza, portería, local">
           <div class="location-actions">
+            <button class="location-button" type="button" data-capture-destination-location>Usar GPS</button>
             <button class="location-button" type="button" data-open-ride-map="destination">Elegir en el mapa</button>
           </div>
           <span id="destination-location-status" class="small-text muted">${state.pendingDestinationLocation ? "Punto B listo para esta solicitud." : "Escribe la dirección o toca el mapa para ubicar B."}</span>
@@ -4627,6 +4628,8 @@ function bindDriverEvents() {
   });
   const pickupLocationButton = app.querySelector("[data-capture-pickup-location]");
   if (pickupLocationButton) pickupLocationButton.addEventListener("click", capturePickupLocation);
+  const destinationLocationButton = app.querySelector("[data-capture-destination-location]");
+  if (destinationLocationButton) destinationLocationButton.addEventListener("click", () => captureRideLocation("destination"));
   app.querySelectorAll("[data-open-ride-map]").forEach(button => {
     button.addEventListener("click", () => openRideMapPicker(button.dataset.openRideMap));
   });
