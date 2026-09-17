@@ -6110,3 +6110,238 @@ body.welcome-view {
     font-weight: 1000;
   }
 }
+
+/* Dirección visual tipo app GPS HÁGALE: pantallas principales más limpias,
+   botones grandes y menos sensación de formulario tradicional. */
+@media (max-width: 760px) {
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card {
+    position: relative;
+    min-height: calc(100svh - 8.2rem);
+    padding: .9rem 1rem 1rem;
+    border-top: 0;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,.72), rgba(0,0,0,.24) 34%, rgba(0,0,0,.82) 74%),
+      radial-gradient(circle at 19% 27%, rgba(0,166,160,.62) 0 1.3rem, transparent 1.36rem),
+      radial-gradient(circle at 78% 31%, rgba(0,0,0,.78) 0 .78rem, transparent .84rem),
+      linear-gradient(118deg, transparent 0 35%, rgba(255,216,0,.74) 35% 37%, #e24242 37% 38.2%, transparent 38.2%),
+      linear-gradient(142deg, transparent 0 58%, rgba(255,255,255,.88) 58% 59.8%, transparent 59.8%),
+      linear-gradient(90deg, #f5f1e7 0 28%, #c9ee98 28% 70%, #eee9dc 70%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .eyebrow {
+    display: block;
+    margin: .2rem auto .12rem;
+    color: #ffd800;
+    font-size: .8rem;
+    text-align: center;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > h2 {
+    margin: 0 auto .12rem;
+    color: #fff;
+    font-size: clamp(2rem, 11vw, 3.35rem);
+    line-height: .95;
+    text-align: center;
+    text-transform: uppercase;
+    text-shadow: 0 3px 0 rgba(0,0,0,.38);
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .muted {
+    max-width: 28ch;
+    margin: 0 auto .65rem;
+    color: #fff;
+    font-size: .82rem;
+    text-align: center;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stepper {
+    display: none;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading {
+    margin-top: .45rem;
+    text-align: center;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading h3 {
+    display: inline-block;
+    padding: .58rem .9rem;
+    border-radius: .78rem;
+    color: #fff;
+    background: #050506;
+    font-size: 1rem;
+    box-shadow: 0 9px 20px rgba(0,0,0,.28);
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading p {
+    display: none;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form {
+    width: 100%;
+    margin: auto 0 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field {
+    padding: .78rem .9rem;
+    border: 2px solid #111218;
+    border-radius: .9rem;
+    background: rgba(255,255,255,.96);
+    box-shadow: 0 8px 18px rgba(0,0,0,.16);
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form label {
+    font-size: .8rem;
+    text-transform: uppercase;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form input,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form select {
+    min-height: 2.75rem;
+    border: 0;
+    border-radius: .45rem;
+    background: transparent;
+    font-size: 1.03rem;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .location-actions {
+    grid-template-columns: 1fr 1fr;
+    margin-top: .55rem;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .location-button {
+    min-height: 2.75rem;
+    border: 2px solid #111218;
+    border-radius: .8rem;
+    color: #111218;
+    background: #ffd800;
+    font-size: .85rem;
+    font-weight: 1000;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .ride-price-reference {
+    border: 2px solid #ffd800;
+    border-radius: .75rem;
+    color: #fff;
+    background: #050506;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .ride-price-reference strong {
+    color: #ffd800;
+    font-size: 1.35rem;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-actions .button-primary {
+    min-height: 4.25rem;
+    border: 3px solid #111218;
+    border-radius: 1rem;
+    color: #050506;
+    background: #ffd800;
+    font-size: clamp(1.25rem, 6vw, 1.95rem);
+    box-shadow: 0 8px 0 rgba(0,0,0,.38);
+  }
+
+  .driver-shell.has-active-journey {
+    background: #050506;
+  }
+
+  .driver-shell.has-active-journey .driver-active-card {
+    min-height: calc(100svh - 10.4rem);
+    border: 0;
+    border-radius: 0;
+    color: #fff;
+    background: #050506;
+    box-shadow: none;
+  }
+
+  .driver-shell.has-active-journey .driver-active-heading {
+    display: grid;
+    justify-items: center;
+    gap: .6rem;
+    text-align: center;
+  }
+
+  .driver-shell.has-active-journey .driver-active-heading::after {
+    content: "";
+    display: block;
+    width: min(100%, 26rem);
+    aspect-ratio: 16 / 8;
+    border-radius: 1rem;
+    border: 1px solid rgba(255,216,0,.25);
+    background:
+      linear-gradient(0deg, rgba(255,216,0,.28), rgba(0,0,0,.2)),
+      url("/assets/hagale-moto-original.png") center / cover no-repeat;
+    box-shadow: 0 13px 26px rgba(0,0,0,.34);
+  }
+
+  .driver-shell.has-active-journey .driver-active-heading h2 {
+    margin: .1rem 0;
+    color: #ffd800;
+    font-size: clamp(1.55rem, 8vw, 2.65rem);
+  }
+
+  .driver-shell.has-active-journey .driver-active-heading p {
+    color: #fff;
+    font-size: 1.05rem;
+    font-weight: 900;
+  }
+
+  .driver-shell.has-active-journey .badge {
+    color: #050506;
+    background: #ffd800;
+  }
+
+  .driver-shell.has-active-journey .driver-route-card {
+    grid-template-columns: 1fr;
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 2px solid #ffd800;
+    border-radius: 1rem;
+    background:
+      radial-gradient(circle at 66% 58%, rgba(0,115,255,.95) 0 .32rem, transparent .36rem),
+      radial-gradient(circle at 41% 73%, #ffd800 0 .55rem, transparent .6rem),
+      linear-gradient(112deg, transparent 0 52%, rgba(0,0,0,.9) 52% 53.4%, transparent 53.4%),
+      linear-gradient(150deg, #ece8df, #f7f4ee);
+  }
+
+  .driver-shell.has-active-journey .route-stop {
+    padding: .68rem .78rem;
+    border: 2px solid #ffd800;
+    border-radius: .75rem;
+    background: #050506;
+  }
+
+  .driver-shell.has-active-journey .route-stop span { color: #ffd800; }
+  .driver-shell.has-active-journey .route-stop strong {
+    color: #fff;
+    font-size: 1.05rem;
+  }
+
+  .driver-shell.has-active-journey .driver-trip-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .driver-shell.has-active-journey .driver-trip-summary > div {
+    border-color: #ffd800;
+    color: #fff;
+    background: #050506;
+  }
+
+  .driver-shell.has-active-journey .driver-trip-summary strong {
+    color: #ffd800;
+    font-size: 1.1rem;
+  }
+
+  .driver-shell.has-active-journey .driver-active-actions .button {
+    min-height: 3.75rem;
+    border: 2px solid #111218;
+    border-radius: .9rem;
+    font-size: 1.05rem;
+    font-weight: 1000;
+  }
+}
