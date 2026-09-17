@@ -6782,3 +6782,80 @@ body.welcome-view {
     max-height: 7.5rem;
   }
 }
+
+/* Ruta A/B: colores consistentes en solicitud, seguimiento, conductor y mapa. */
+.route-letter.route-letter-a {
+  color: #111218 !important;
+  background: #ffd800 !important;
+}
+
+.route-letter.route-letter-b {
+  color: #ffd800 !important;
+  background: #111218 !important;
+}
+
+.hagale-map-pin-pickup .hagale-map-pin-shape,
+.search-map-pin-a {
+  color: #111218 !important;
+  background: #ffd800 !important;
+}
+
+.hagale-map-pin-destination .hagale-map-pin-shape,
+.search-map-pin-b {
+  color: #ffd800 !important;
+  background: #111218 !important;
+}
+
+.route-stop-pickup strong,
+.driver-sheet-route > div:first-child strong,
+.customer-tracking-route > div:first-child strong,
+.customer-search-route > div:first-child strong,
+.customer-route-summary > div:first-child strong,
+.customer-history-route p:first-child strong,
+.customer-counteroffer-route > strong:nth-of-type(1) {
+  color: #ffffff !important;
+}
+
+.route-stop-destination strong,
+.driver-sheet-route > div:last-child strong,
+.customer-tracking-route > div:last-child strong,
+.customer-search-route > div:last-child strong,
+.customer-route-summary > div:nth-of-type(3) strong,
+.customer-history-route p:last-child strong,
+.customer-counteroffer-route > strong:nth-of-type(2) {
+  color: #ffd800 !important;
+}
+
+.route-stop-pickup > span,
+.driver-sheet-route > div:first-child small,
+.customer-tracking-route > div:first-child small,
+.customer-route-summary > div:first-child small {
+  color: #ffffff !important;
+}
+
+.route-stop-destination > span,
+.driver-sheet-route > div:last-child small,
+.customer-tracking-route > div:last-child small,
+.customer-route-summary > div:nth-of-type(3) small {
+  color: #ffd800 !important;
+}
+
+.customer-route-summary {
+  border-color: #ffd800;
+  background: #111218;
+}
+
+.customer-route-summary-line { background: #ffd800; }
+
+.driver-sheet-route > div,
+.customer-history-route p {
+  padding: .58rem .65rem;
+  border: 1px solid rgba(255,216,0,.38);
+  border-radius: .7rem;
+  background: #111218;
+}
+
+.customer-counteroffer-route > span:nth-of-type(2) {
+  color: #ffd800;
+  background: #111218;
+}
