@@ -399,7 +399,7 @@ function formatCop(value) {
 }
 function formatCopForVoice(value) {
   const amount = Math.max(0, Math.round(Number(value) || 0));
-  return `${new Intl.NumberFormat("es-CO").format(amount)} pesos colombianos`;
+  return `${new Intl.NumberFormat("es-CO").format(amount)} pesos`;
 }
 
 function numberToSpanishUnderOneThousand(value) {
