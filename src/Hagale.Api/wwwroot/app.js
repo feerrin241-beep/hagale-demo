@@ -830,9 +830,9 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
   if (newOfferCount > 0) {
     notifyDriverNewOffers(newOffers);
   }
-  if (currentRideChanged && currentRequest) {
-    announceRideNotification(`Servicio actualizado: ${label[currentRequest.status] || currentRequest.status}.`);
-  }
+  // Los cambios de estado provocados por el propio conductor ya se confirman
+  // con el botón y el aviso visual de la acción. No los repitas como una nueva
+  // oferta hablada: eso hacía que "Conductor en camino" sonara dos veces.
 
   return { offerSetChanged, currentRideChanged, newOfferCount };
 }

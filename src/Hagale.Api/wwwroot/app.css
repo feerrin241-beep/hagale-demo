@@ -16,6 +16,321 @@
   background: var(--paper);
 }
 
+/* Modo sobrio por paneles: en teléfono cada estado tiene una sola prioridad
+   visual, igual que la referencia del flujo de inDrive enviada por el usuario. */
+@media (max-width: 760px) {
+  .customer-shell .mode-hero,
+  .driver-shell.has-active-journey .mode-hero,
+  .driver-shell.has-active-journey .driver-quick-actions,
+  .driver-shell.has-active-journey .driver-bottom-nav {
+    display: none !important;
+  }
+
+  .customer-shell .customer-app-header {
+    min-height: 3.25rem;
+    padding: .45rem .75rem;
+  }
+
+  .customer-shell .customer-panel-nav {
+    padding: .4rem .7rem;
+    gap: .35rem;
+    overflow-x: auto;
+  }
+
+  .customer-shell .customer-panel-tab {
+    flex: 0 0 auto;
+    min-width: 7rem;
+    min-height: 2.45rem;
+    padding: .35rem .65rem;
+  }
+
+  .customer-shell .customer-panel-tab small {
+    display: none;
+  }
+
+  .customer-shell .customer-panel-stage {
+    min-height: calc(100svh - 6.1rem);
+    padding: 0;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card {
+    min-height: calc(100svh - 6.1rem);
+    display: flex;
+    flex-direction: column;
+    gap: .55rem;
+    padding: .85rem .85rem 1rem;
+    border: 0;
+    border-radius: 0;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,.58), rgba(0,0,0,.12) 35%, rgba(0,0,0,.82) 78%),
+      linear-gradient(135deg, #e8f1d0 0 32%, #c5e590 32% 65%, #eee9dc 65%);
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .eyebrow,
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .muted,
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-footer,
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading p,
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stepper,
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form .callout,
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form .small-text.muted {
+    display: none !important;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > h2 {
+    margin: .15rem 0 .2rem;
+    color: #fff;
+    font-size: clamp(1.3rem, 7vw, 2rem);
+    line-height: 1;
+    text-align: center;
+    text-transform: none;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: .65rem;
+    margin: 0;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading {
+    order: -1;
+    margin: 0;
+    text-align: center;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading h3 {
+    margin: 0;
+    padding: .55rem .8rem;
+    border: 2px solid #ffd800;
+    border-radius: .8rem;
+    color: #fff;
+    background: #050506;
+    font-size: .95rem;
+    font-weight: 950;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: .6rem;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field {
+    padding: .62rem .8rem;
+    border: 2px solid #111218;
+    border-radius: .85rem;
+    background: rgba(255,255,255,.96);
+    box-shadow: 0 7px 16px rgba(0,0,0,.16);
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form label {
+    color: #15161a;
+    font-size: .74rem;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form input,
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form select {
+    min-height: 2.65rem;
+    border: 0;
+    color: #111218;
+    background: transparent;
+    font-size: 1rem;
+    font-weight: 850;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-actions {
+    margin-top: auto;
+    padding-top: .2rem;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-actions .button-primary {
+    width: 100%;
+    min-height: 3.65rem;
+    border: 3px solid #111218;
+    border-radius: 1rem;
+    color: #050506;
+    background: #ffd800;
+    font-size: clamp(1.2rem, 6vw, 1.65rem);
+    font-weight: 1000;
+    box-shadow: 0 7px 0 rgba(0,0,0,.34);
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .ride-price-reference {
+    margin-top: auto;
+    padding: .7rem .85rem;
+    border: 2px solid #ffd800;
+    border-radius: .8rem;
+    color: #fff;
+    background: #050506;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .ride-price-reference span {
+    display: none;
+  }
+
+  .customer-shell .customer-panel-stage[data-active-customer-panel="ride"] .ride-price-reference strong {
+    color: #ffd800;
+    font-size: 1.4rem;
+    font-weight: 1000;
+  }
+
+  .driver-shell.has-active-journey .driver-mobile-header {
+    min-height: 3.1rem;
+    padding: .4rem .7rem;
+  }
+
+  .driver-shell.has-active-journey .driver-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+  }
+
+  .driver-shell.has-active-journey .driver-workspace > .driver-map-card {
+    display: block;
+    order: 0;
+    min-height: 28svh;
+    margin: 0;
+    padding: .7rem;
+    border: 0;
+    border-radius: 0;
+    background: #dce9ca;
+    box-shadow: none;
+  }
+
+  .driver-shell.has-active-journey .driver-workspace > .driver-map-card > .section-title,
+  .driver-shell.has-active-journey .driver-workspace > .driver-map-card .muted,
+  .driver-shell.has-active-journey .driver-workspace > .driver-map-card .button-row {
+    display: none;
+  }
+
+  .driver-shell.has-active-journey .driver-active-card {
+    order: 1;
+    min-height: calc(72svh - 3.1rem);
+    display: flex;
+    flex-direction: column;
+    gap: .55rem;
+    padding: .85rem .85rem 1rem;
+    border: 0;
+    border-radius: 1.1rem 1.1rem 0 0;
+    background: #050506;
+    box-shadow: 0 -8px 20px rgba(0,0,0,.22);
+  }
+
+  .driver-shell.has-active-journey .driver-active-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .6rem;
+    text-align: left;
+  }
+
+  .driver-shell.has-active-journey .driver-active-heading::after,
+  .driver-shell.has-active-journey .driver-active-heading .eyebrow,
+  .driver-shell.has-active-journey .driver-active-heading p,
+  .driver-shell.has-active-journey .driver-active-card .driver-accepted-banner,
+  .driver-shell.has-active-journey .driver-active-card .driver-stage-alert p,
+  .driver-shell.has-active-journey .driver-active-card .journey-timeline,
+  .driver-shell.has-active-journey .driver-active-card .journey-waiting,
+  .driver-shell.has-active-journey .driver-active-card .private-communication-card,
+  .driver-shell.has-active-journey .driver-active-card .driver-sheet-note,
+  .driver-shell.has-active-journey .driver-active-card .driver-journey-guidance {
+    display: none !important;
+  }
+
+  .driver-shell.has-active-journey .driver-active-heading h2 {
+    margin: 0;
+    color: #ffd800;
+    font-size: clamp(1.35rem, 7vw, 2rem);
+    font-weight: 1000;
+  }
+
+  .driver-shell.has-active-journey .driver-active-heading .badge {
+    flex: 0 0 auto;
+    color: #050506;
+    background: #ffd800;
+  }
+
+  .driver-shell.has-active-journey .driver-route-card {
+    display: grid;
+    gap: .45rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .driver-shell.has-active-journey .route-connector { display: none; }
+
+  .driver-shell.has-active-journey .route-stop {
+    padding: .62rem .75rem;
+    border: 2px solid #33343b;
+    border-radius: .75rem;
+    background: #17181d;
+  }
+
+  .driver-shell.has-active-journey .route-stop span {
+    color: #ffd800;
+    font-size: .7rem;
+    font-weight: 950;
+  }
+
+  .driver-shell.has-active-journey .route-stop strong {
+    display: block;
+    overflow: hidden;
+    color: #fff;
+    font-size: .98rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .driver-shell.has-active-journey .driver-trip-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .45rem;
+  }
+
+  .driver-shell.has-active-journey .driver-trip-summary > div {
+    padding: .55rem .65rem;
+    border: 1px solid #33343b;
+    border-radius: .7rem;
+    background: #17181d;
+  }
+
+  .driver-shell.has-active-journey .driver-trip-summary > div:nth-child(n+5) { display: none; }
+  .driver-shell.has-active-journey .driver-trip-summary span { display: none; }
+  .driver-shell.has-active-journey .driver-trip-summary strong {
+    color: #ffd800;
+    font-size: 1rem;
+    font-weight: 1000;
+  }
+
+  .driver-shell.has-active-journey .driver-active-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    margin-top: auto;
+    gap: .5rem;
+  }
+
+  .driver-shell.has-active-journey .driver-active-actions .button {
+    min-height: 3.5rem;
+    border: 2px solid #111218;
+    border-radius: .9rem;
+    font-size: 1.05rem;
+    font-weight: 1000;
+  }
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -6344,4 +6659,67 @@ body.welcome-view {
     font-size: 1.05rem;
     font-weight: 1000;
   }
+}
+
+/* Prioridad final para el flujo compacto 9:16. */
+@media (max-width: 760px) {
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .eyebrow,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .muted,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-footer,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading p,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stepper,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form .callout,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form .small-text.muted,
+  .driver-shell.has-active-journey .mode-hero,
+  .driver-shell.has-active-journey .driver-quick-actions,
+  .driver-shell.has-active-journey .driver-bottom-nav,
+  .driver-shell.has-active-journey .driver-active-heading::after,
+  .driver-shell.has-active-journey .driver-active-heading .eyebrow,
+  .driver-shell.has-active-journey .driver-active-heading p,
+  .driver-shell.has-active-journey .driver-active-card .driver-accepted-banner,
+  .driver-shell.has-active-journey .driver-active-card .driver-stage-alert p,
+  .driver-shell.has-active-journey .driver-active-card .journey-timeline,
+  .driver-shell.has-active-journey .driver-active-card .journey-waiting,
+  .driver-shell.has-active-journey .driver-active-card .private-communication-card,
+  .driver-shell.has-active-journey .driver-active-card .driver-sheet-note,
+  .driver-shell.has-active-journey .driver-active-card .driver-journey-guidance { display: none !important; }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card {
+    min-height: calc(100svh - 6.1rem);
+    gap: .55rem;
+    padding: .85rem;
+    border: 0;
+    border-radius: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,.56), rgba(0,0,0,.16) 34%, rgba(0,0,0,.82) 80%), linear-gradient(135deg, #e8f1d0 0 32%, #c5e590 32% 65%, #eee9dc 65%);
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > h2 {
+    margin: .15rem 0 .2rem;
+    color: #fff;
+    font-size: clamp(1.3rem, 7vw, 2rem);
+    line-height: 1;
+    text-align: center;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form { display: flex; flex: 1; flex-direction: column; gap: .6rem; width: 100%; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading h3 { margin: 0; padding: .55rem .8rem; border: 2px solid #ffd800; border-radius: .8rem; color: #fff; background: #050506; font-size: .95rem; font-weight: 950; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field { padding: .62rem .8rem; border: 2px solid #111218; border-radius: .85rem; background: rgba(255,255,255,.96); }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-actions { margin-top: auto; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-actions .button-primary { width: 100%; min-height: 3.65rem; border: 3px solid #111218; border-radius: 1rem; color: #050506; background: #ffd800; font-size: clamp(1.2rem, 6vw, 1.65rem); font-weight: 1000; }
+
+  .driver-shell.has-active-journey .driver-workspace { display: flex; flex-direction: column; gap: 0; padding: 0; }
+  .driver-shell.has-active-journey .driver-workspace > .driver-map-card { order: 0; min-height: 28svh; margin: 0; padding: .7rem; border: 0; border-radius: 0; box-shadow: none; }
+  .driver-shell.has-active-journey .driver-active-card { order: 1; min-height: calc(72svh - 3.1rem); display: flex; flex-direction: column; gap: .55rem; padding: .85rem; border: 0; border-radius: 1.1rem 1.1rem 0 0; background: #050506; }
+  .driver-shell.has-active-journey .driver-active-heading { display: flex; align-items: center; justify-content: space-between; gap: .6rem; text-align: left; }
+  .driver-shell.has-active-journey .driver-active-heading h2 { margin: 0; color: #ffd800; font-size: clamp(1.35rem, 7vw, 2rem); line-height: 1.08; font-weight: 1000; }
+  .driver-shell.has-active-journey .driver-route-card { display: grid; grid-template-columns: 1fr; gap: .45rem; margin: 0; padding: 0; border: 0; background: transparent; }
+  .driver-shell.has-active-journey .route-connector { display: none; }
+  .driver-shell.has-active-journey .route-stop { padding: .62rem .75rem; border: 2px solid #33343b; border-radius: .75rem; background: #17181d; }
+  .driver-shell.has-active-journey .route-stop strong { display: block; overflow: hidden; color: #fff; font-size: .98rem; text-overflow: ellipsis; white-space: nowrap; }
+  .driver-shell.has-active-journey .driver-trip-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; }
+  .driver-shell.has-active-journey .driver-trip-summary > div:nth-child(n+5), .driver-shell.has-active-journey .driver-trip-summary span { display: none; }
+  .driver-shell.has-active-journey .driver-trip-summary strong { color: #ffd800; font-size: 1rem; font-weight: 1000; }
+  .driver-shell.has-active-journey .driver-active-actions { display: grid; grid-template-columns: 1fr; margin-top: auto; gap: .5rem; }
+  .driver-shell.has-active-journey .driver-active-actions .button { min-height: 3.5rem; border: 2px solid #111218; border-radius: .9rem; font-size: 1.05rem; font-weight: 1000; }
 }
