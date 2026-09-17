@@ -5297,6 +5297,7 @@ async function createEmergencyServiceChannel(event) {
 }
 
 function signOut(notify = true) {
+  if (notify && !window.confirm("¿Estás seguro de que quieres salir?")) return;
   stopDriverLocationTracking();
   destroyDriverMap();
   destroyCustomerTrackingMap();
