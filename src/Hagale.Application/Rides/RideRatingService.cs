@@ -15,6 +15,7 @@ public sealed class RideRatingService(
     TimeProvider timeProvider) : IRideRatingService
 {
     private const int MaximumCommentLength = 240;
+    private static readonly TimeZoneInfo ColombiaTimeZone = ResolveColombiaTimeZone();
 
     public async Task<ApplicationResult<IReadOnlyCollection<RideRatingDto>>> ListAsync(
         Guid userId,
@@ -31,8 +32,13 @@ public sealed class RideRatingService(
             rideRequestId,
             cancellationToken);
 
+        // La propia nota se confirma de inmediato. La recibida solo se revela
+        // desde el día siguiente en Colombia y sin datos de identidad.
         return ApplicationResult<IReadOnlyCollection<RideRatingDto>>.Success(
-            ratings.Select(ToDto).ToArray());
+            ratings
+                .Where(rating => rating.RaterUserId == userId || IsVisibleToRecipient(rating))
+                .Select(rating => ToDto(rating, rating.RaterUserId == userId))
+                .ToArray());
     }
 
     public async Task<ApplicationResult<RideRatingDto>> SubmitAsync(
@@ -89,7 +95,7 @@ public sealed class RideRatingService(
         rideRatingRepository.Add(rating);
         await rideRatingRepository.SaveChangesAsync(cancellationToken);
 
-        return ApplicationResult<RideRatingDto>.Success(ToDto(rating));
+        return ApplicationResult<RideRatingDto>.Success(ToDto(rating, isMine: true));
     }
 
     private async Task<ParticipantResult> GetParticipantAsync(
@@ -122,16 +128,30 @@ public sealed class RideRatingService(
         return ParticipantResult.Success(ride, "Driver", "Customer");
     }
 
-    private static RideRatingDto ToDto(RideRating rating) =>
+    private bool IsVisibleToRecipient(RideRating rating)
+    {
+        var ratingDay = TimeZoneInfo.ConvertTime(rating.RatedAtUtc, ColombiaTimeZone).Date;
+        var currentDay = TimeZoneInfo.ConvertTime(timeProvider.GetUtcNow(), ColombiaTimeZone).Date;
+        return currentDay > ratingDay;
+    }
+
+    private static RideRatingDto ToDto(RideRating rating, bool isMine) =>
         new(
-            rating.Id,
-            rating.RideRequestId,
-            rating.RaterUserId,
-            rating.RaterRole,
-            rating.RatedRole,
             rating.Score,
-            rating.Comment,
-            rating.RatedAtUtc);
+            isMine ? rating.Comment : null,
+            isMine);
+
+    private static TimeZoneInfo ResolveColombiaTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("America/Bogota");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("SA Pacific Standard Time");
+        }
+    }
 
     private sealed record ParticipantResult(
         bool IsSuccess,

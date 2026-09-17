@@ -4,15 +4,12 @@ namespace Hagale.Application.Rides;
 
 public sealed record SubmitRideRatingCommand(int Score, string? Comment);
 
+// La identidad de quien califica nunca sale del servidor. La persona evaluada
+// recibe únicamente una nota anónima desde el día calendario siguiente.
 public sealed record RideRatingDto(
-    Guid Id,
-    Guid RideRequestId,
-    Guid RaterUserId,
-    string RaterRole,
-    string RatedRole,
     int Score,
     string? Comment,
-    DateTimeOffset RatedAtUtc);
+    bool IsMine);
 
 public interface IRideRatingService
 {

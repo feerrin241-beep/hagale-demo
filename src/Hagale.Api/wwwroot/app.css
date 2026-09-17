@@ -6859,3 +6859,76 @@ body.welcome-view {
   color: #ffd800;
   background: #111218;
 }
+
+/* Acción principal de aceptación y repetición de ruta: visibles a una mano en móvil. */
+.driver-accept-large {
+  position: relative;
+  isolation: isolate;
+  min-height: 4.7rem;
+  overflow: hidden;
+  border: 3px solid #111218;
+  border-radius: 1rem;
+  color: #050506;
+  background: #ffd800;
+  box-shadow: 0 .38rem 0 #7d6800, 0 1rem 1.6rem rgba(0, 0, 0, .2);
+  font-size: clamp(1.3rem, 5.8vw, 1.78rem);
+  font-weight: 1000;
+  letter-spacing: -.025em;
+  animation: driverAcceptPulse 1.9s ease-in-out infinite;
+}
+
+.driver-accept-large::after {
+  position: absolute;
+  z-index: -1;
+  top: -45%;
+  left: -34%;
+  width: 28%;
+  height: 190%;
+  content: "";
+  background: rgba(255, 255, 255, .7);
+  transform: rotate(22deg);
+  animation: driverAcceptShine 2.8s ease-in-out infinite;
+}
+
+.driver-accept-large:hover,
+.driver-accept-large:focus-visible {
+  color: #050506;
+  background: #ffe342;
+  transform: translateY(-.12rem) scale(1.015);
+}
+
+.driver-accept-large:active {
+  box-shadow: 0 .12rem 0 #7d6800;
+  transform: translateY(.26rem) scale(.99);
+}
+
+.driver-route-audio-actions { display: flex; justify-content: flex-start; }
+.driver-repeat-route {
+  width: 100%;
+  min-height: 2.95rem;
+  border: 2px solid #ffd800;
+  border-radius: .8rem;
+  color: #fff;
+  background: #17181d;
+  font-weight: 950;
+}
+.driver-repeat-route:hover,
+.driver-repeat-route:focus-visible { color: #050506; background: #ffd800; }
+.driver-request-sheet .driver-repeat-route { color: #111218; border-color: #111218; background: #fff8c6; }
+.driver-request-sheet .driver-repeat-route:hover,
+.driver-request-sheet .driver-repeat-route:focus-visible { color: #050506; background: #ffd800; }
+
+@keyframes driverAcceptPulse {
+  0%, 100% { box-shadow: 0 .38rem 0 #7d6800, 0 1rem 1.6rem rgba(0, 0, 0, .2); }
+  50% { box-shadow: 0 .38rem 0 #7d6800, 0 0 0 .42rem rgba(255, 216, 0, .22), 0 1.1rem 1.8rem rgba(0, 0, 0, .24); }
+}
+
+@keyframes driverAcceptShine {
+  0%, 62% { left: -34%; }
+  83%, 100% { left: 122%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .driver-accept-large,
+  .driver-accept-large::after { animation: none; }
+}

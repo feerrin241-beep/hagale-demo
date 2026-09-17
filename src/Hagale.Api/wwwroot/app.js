@@ -63,6 +63,7 @@ const state = {
   customerTrackingMap: null,
   customerTrackingPollingTimer: null,
   customerTrackingVersion: 0,
+  lastCustomerJourneyVoiceKey: null,
   rideChatMessages: {},
   rideChatLoadingIds: new Set(),
   hiddenDriverOfferIds: new Set(),
@@ -428,7 +429,6 @@ function numberToSpanishForVoice(value) {
 
 function normalizeAddressForVoice(address) {
   return String(address || "")
-    .split("·")[0]
     .replace(/\bcl\.?\b/gi, "calle")
     .replace(/\bcra\.?\b/gi, "carrera")
     .replace(/\bkr\.?\b/gi, "carrera")
@@ -596,6 +596,10 @@ function speakDriverAlert(message, force = false) {
 
   try {
     window.speechSynthesis.cancel();
+    // En móviles algunos navegadores dejan la síntesis pausada después de que
+    // la pestaña vuelve al frente. Reanudarla antes de hablar evita que el
+    // aviso se quede en silencio tras una interacción del usuario.
+    window.speechSynthesis.resume?.();
     const utterance = new SpeechSynthesisUtterance(message);
     utterance.lang = "es-CO";
     utterance.rate = 0.96;
@@ -625,6 +629,35 @@ function summarizeAddressForVoice(address) {
   if (!clean) return "el destino indicado";
   const voiceReady = normalizeAddressForVoice(clean);
   return voiceReady.length > 90 ? `${voiceReady.slice(0, 87)}...` : voiceReady;
+}
+
+function fullAddressForVoice(address) {
+  const clean = String(address || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "dirección pendiente";
+  const voiceReady = normalizeAddressForVoice(clean);
+  return voiceReady.length > 220 ? `${voiceReady.slice(0, 217)}...` : voiceReady;
+}
+
+function buildDriverRouteVoiceMessage(rideRequest) {
+  if (!rideRequest) return "No encontré las direcciones de este servicio.";
+  const pickup = fullAddressForVoice(rideRequest.pickupAddress);
+  const destination = fullAddressForVoice(rideRequest.destinationAddress);
+  return `Direcciones del servicio. Recogida A: ${pickup}. Destino B: ${destination}.`;
+}
+
+function repeatDriverRoute(rideRequestId) {
+  const rideRequest = state.driverCurrentRideRequest?.id === rideRequestId
+    ? state.driverCurrentRideRequest
+    : state.driverRideOffers.find(offer => offer.id === rideRequestId);
+  if (!rideRequest) {
+    showNotice("La solicitud ya no está disponible.", true);
+    return;
+  }
+
+  state.driverAlertsUnlocked = true;
+  if (navigator.vibrate) navigator.vibrate([80, 55, 80]);
+  speakDriverAlert(buildDriverRouteVoiceMessage(rideRequest), true);
+  showNotice("Repitiendo las direcciones completas.");
 }
 
 function buildDriverOfferVoiceMessage(offer) {
@@ -981,7 +1014,7 @@ function syncRideRealtime() {
     void runRealtimeRefresh(async () => {
       const activeRide = getActiveCustomerRide();
       if (state.activeMode === "Customer" && activeRide?.id === rideRequestId) {
-        await refreshCustomerRideTracking();
+        await refreshCustomerRideTracking({ notifyJourneyChange: true });
       }
     });
   });
@@ -1867,7 +1900,7 @@ async function refreshCustomerRideTracking({ notifyJourneyChange = false } = {})
   if (tracking?.status && tracking.status !== activeRide.status) {
     renderDashboard();
     if (notifyJourneyChange) {
-      announceRideNotification(buildCustomerRideVoiceMessage(updatedRide, tracking.status), { forceVoice: true, forceSound: true });
+      announceCustomerJourneyUpdate(updatedRide, tracking.status);
     }
     return tracking;
   }
@@ -1913,10 +1946,14 @@ async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
   if (journeyChanged) {
     renderDashboard();
     if (notifyJourneyChange) {
-      const message = currentOpenRide
-        ? `Estado actualizado: ${label[currentOpenRide.status] || currentOpenRide.status}.`
-        : "Tu servicio anterior ya no está activo.";
-      announceRideNotification(currentOpenRide ? buildCustomerRideVoiceMessage(currentOpenRide, currentOpenRide.status) : message, { forceVoice: true, forceSound: true });
+      const completedRide = currentOpenRide
+        ? null
+        : state.rideRequests.find(rideRequest => rideRequest.id === previousRideId && rideRequest.status === "Completed");
+      if (currentOpenRide) {
+        announceCustomerJourneyUpdate(currentOpenRide, currentOpenRide.status);
+      } else if (completedRide) {
+        announceCustomerJourneyUpdate(completedRide, "Completed");
+      }
     }
   }
 
@@ -1925,15 +1962,35 @@ async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
 
 function buildCustomerRideVoiceMessage(rideRequest, status) {
   const rideStatus = status || rideRequest?.status;
-  const pickup = summarizeAddressForVoice(rideRequest?.pickupAddress);
-  const destination = summarizeAddressForVoice(rideRequest?.destinationAddress);
-  const fare = formatCopForVoice(rideRequest?.proposedPriceCop);
-  if (rideStatus === "Accepted") return `Tu servicio fue aceptado. Recogida en ${pickup}, destino ${destination}, valor ${fare}.`;
-  if (rideStatus === "DriverEnRoute") return `Tu conductor va en camino al punto de recogida: ${pickup}. Valor del servicio: ${fare}.`;
-  if (rideStatus === "DriverArrived") return `Tu conductor llegó al punto de recogida: ${pickup}.`;
-  if (rideStatus === "InProgress") return `Viaje iniciado hacia ${destination}.`;
-  if (rideStatus === "Completed") return `Viaje finalizado. Gracias por usar Hagale.`;
-  return `Estado actualizado: ${label[rideStatus] || rideStatus || "servicio"}.`;
+  const driver = state.customerRideTracking?.driver;
+  const driverName = [driver?.firstName, driver?.lastName]
+    .map(value => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ") || "tu conductor";
+  if (rideStatus === "Accepted") return `Conductor asignado: ${driverName}.`;
+  if (rideStatus === "DriverArrived") return "Ya llegué a recogida.";
+  if (rideStatus === "InProgress") return "Viaje iniciado.";
+  if (rideStatus === "Completed") return "Viaje finalizado.";
+  return "";
+}
+
+function announceCustomerJourneyUpdate(rideRequest, status) {
+  const message = buildCustomerRideVoiceMessage(rideRequest, status);
+  if (!message) return;
+  const notificationKey = `${rideRequest?.id || "ride"}:${status}`;
+  if (state.lastCustomerJourneyVoiceKey === notificationKey) return;
+  state.lastCustomerJourneyVoiceKey = notificationKey;
+  announceRideNotification(message, { forceVoice: true, forceSound: true });
+}
+
+function testCustomerVoiceAlerts() {
+  state.driverAlertsUnlocked = true;
+  const activeRide = getActiveCustomerRide();
+  const message = activeRide
+    ? buildCustomerRideVoiceMessage(activeRide, activeRide.status)
+    : "Avisos de voz activados.";
+  speakDriverAlert(message || "Avisos de voz activados.", true);
+  showNotice("Aviso de voz activado. Mantén el volumen del teléfono encendido.");
 }
 function syncCustomerTrackingPolling(isCustomerMode) {
   window.clearInterval(state.customerTrackingPollingTimer);
@@ -3557,6 +3614,7 @@ function renderDriverRideRequestsPanel() {
           <div class="route-connector" aria-hidden="true"></div>
           <div class="route-stop route-stop-destination"><span>DESTINO · B</span><strong>${escapeHtml(currentRequest.destinationAddress)}</strong></div>
         </div>
+        <div class="driver-route-audio-actions"><button class="button driver-repeat-route" type="button" data-repeat-driver-route="${escapeHtml(currentRequest.id)}">🔊 Repetir dirección</button></div>
         <div class="driver-trip-summary"><div><span>Servicio</span><strong>${escapeHtml(label[currentRequest.serviceType] || currentRequest.serviceType)}</strong></div><div><span>Ciudad</span><strong>${escapeHtml(currentRequest.operatingCityCode)}</strong></div><div><span>Oferta</span><strong>${formatCop(currentRequest.proposedPriceCop)}</strong></div><div><span>Pago</span><strong>${escapeHtml(getRidePaymentMethodLabel(currentRequest))}</strong></div><div><span>Tarifa</span><strong>${escapeHtml(getRideFareModeLabel(currentRequest))}</strong></div></div>
         ${journeyGuidance}
         ${renderJourneyTimeline(currentRequest)}
@@ -3605,6 +3663,7 @@ function renderDriverOfferSheet(offer) {
       <div class="driver-sheet-heading"><div><span class="eyebrow">Solicitud seleccionada</span><h3><span>Gana</span><strong>${formatCop(offer.proposedPriceCop)}</strong></h3><p>${formatPickupProximity(offer.pickupDistanceKilometers)} · ${escapeHtml(getRidePaymentMethodLabel(offer))}</p></div><button class="button button-quiet" type="button" data-close-driver-offer>Cerrar</button></div>
       ${renderDriverMap(state.application)}
       <div class="driver-sheet-route"><div><span class="route-letter route-letter-a">A</span><p><small>Recogida</small><strong>${escapeHtml(offer.pickupAddress)}</strong></p></div><div><span class="route-letter route-letter-b">B</span><p><small>Destino</small><strong>${escapeHtml(offer.destinationAddress)}</strong></p></div></div>
+      <button class="button driver-repeat-route" type="button" data-repeat-driver-route="${escapeHtml(offer.id)}">🔊 Escuchar direcciones completas</button>
       <div class="driver-sheet-metrics" aria-label="Resumen de distancias de la solicitud">
         <div><span>Hasta A</span><strong>${formatPickupProximity(offer.pickupDistanceKilometers)}</strong></div>
         <div><span>Trayecto A-B</span><strong>${formatDistance(offer.tripDistanceKilometers)}</strong></div>
@@ -3689,24 +3748,22 @@ function renderRideRatingWidget(rideRequest, audience = "customer") {
   if (rideRequest?.status !== "Completed" || !rideRequest.id) return "";
   const rideId = rideRequest.id;
   const ratings = state.rideRatings[rideId] || [];
-  const myRating = ratings.find(rating => rating.raterUserId === state.profile?.userId);
-  const otherRating = ratings.find(rating => rating.raterUserId !== state.profile?.userId);
+  const myRating = ratings.find(rating => rating.isMine);
+  const otherRating = ratings.find(rating => !rating.isMine);
   const targetLabel = audience === "driver" ? "cliente" : "conductor";
-  const average = ratings.length
-    ? (ratings.reduce((sum, rating) => sum + Number(rating.score || 0), 0) / ratings.length).toFixed(1)
-    : null;
+
 
   if (myRating) {
     return `
-      <section class="ride-rating-widget is-complete">
-        <div><span class="eyebrow">Reputación HÁGALE</span><strong>Tu calificación: <span class="rating-stars">${rideRatingStars(myRating.score)}</span></strong><small>${average ? `Promedio de la carrera: ${average}/5` : ""}</small></div>
-        ${otherRating ? `<span class="rating-received"><strong>${rideRatingStars(otherRating.score)}</strong><small>Calificación recibida</small></span>` : '<span class="rating-pending">La otra persona aún no califica.</span>'}
+      <section class="ride-rating-widget is-complete" data-ride-rating-widget="${escapeHtml(rideId)}" data-rating-audience="${escapeHtml(audience)}">
+        <div><span class="eyebrow">Reputación HÁGALE</span><strong>Tu calificación: <span class="rating-stars">${rideRatingStars(myRating.score)}</span></strong><small>Tu calificación quedó guardada de forma privada.</small></div>
+        ${otherRating ? `<span class="rating-received"><strong>${rideRatingStars(otherRating.score)}</strong><small>Calificación recibida · anónima</small></span>` : '<span class="rating-pending">La otra persona aún no califica. Cuando lo haga, la verás mañana de forma anónima.</span>'}
       </section>`;
   }
 
   return `
-    <section class="ride-rating-widget">
-      <div class="ride-rating-heading"><div><span class="eyebrow">Servicio finalizado</span><strong>¿Cómo fue tu experiencia con el ${targetLabel}?</strong><small>Tu calificación ayuda a construir confianza en HÁGALE.</small></div>${otherRating ? `<span class="rating-received"><strong>${rideRatingStars(otherRating.score)}</strong><small>Ya recibiste una calificación</small></span>` : ""}</div>
+    <section class="ride-rating-widget" data-ride-rating-widget="${escapeHtml(rideId)}" data-rating-audience="${escapeHtml(audience)}">
+      <div class="ride-rating-heading"><div><span class="eyebrow">Servicio finalizado</span><strong>¿Cómo fue tu experiencia con el ${targetLabel}?</strong><small>Tu calificación ayuda a construir confianza en HÁGALE.</small></div>${otherRating ? `<span class="rating-received"><strong>${rideRatingStars(otherRating.score)}</strong><small>Calificación anónima disponible</small></span>` : ""}</div>
       <form class="ride-rating-form" data-ride-rating-form="${escapeHtml(rideId)}" data-rating-audience="${escapeHtml(audience)}">
         <div class="ride-rating-stars" role="radiogroup" aria-label="Calificación de 1 a 5 estrellas">
           ${[5, 4, 3, 2, 1].map(score => `<label><input type="radio" name="rating-${escapeHtml(rideId)}" value="${score}" ${score === 5 ? "checked" : ""}><span>${rideRatingStars(score)}</span></label>`).join("")}
@@ -3722,16 +3779,19 @@ async function loadRideRatings(rideRequestId) {
   if (!rideId || !state.token || state.rideRatingLoadingIds.has(rideId)) return;
   state.rideRatingLoadingIds.add(rideId);
   try {
-    state.rideRatings[rideId] = await request(`/ride-requests/${rideId}/ratings`);
-    const form = app.querySelector(`[data-ride-rating-form="${rideId}"]`);
-    const ratingNode = form?.closest(".ride-rating-widget");
-    if (ratingNode) {
-      const ride = [...(state.rideRequests || []), ...(state.driverCompletedRideRequests || [])].find(item => item.id === rideId);
-      if (ride) {
-        ratingNode.outerHTML = renderRideRatingWidget(ride, form.dataset.ratingAudience || "customer");
-        bindRideRatingEvents();
-      }
+    const ratings = await request(`/ride-requests/${rideId}/ratings`);
+    state.rideRatings[rideId] = ratings;
+
+    const ride = [...(state.rideRequests || []), ...(state.driverCompletedRideRequests || [])]
+      .find(item => item.id === rideId);
+    if (ride) {
+      app.querySelectorAll(`[data-ride-rating-widget="${rideId}"]`).forEach(ratingNode => {
+        ratingNode.outerHTML = renderRideRatingWidget(ride, ratingNode.dataset.ratingAudience || "customer");
+      });
+      bindRideRatingEvents();
     }
+
+
   } catch {
     // El siguiente refresco vuelve a consultar el estado autorizado.
   } finally {
@@ -3740,9 +3800,10 @@ async function loadRideRatings(rideRequestId) {
 }
 
 function syncVisibleRideRatings() {
-  app.querySelectorAll("[data-ride-rating-form]").forEach(form => {
-    void loadRideRatings(form.dataset.rideRatingForm);
-  });
+  const rideIds = new Set([...app.querySelectorAll("[data-ride-rating-widget]")]
+    .map(widget => widget.dataset.rideRatingWidget)
+    .filter(Boolean));
+  rideIds.forEach(rideId => void loadRideRatings(rideId));
 }
 
 async function submitRideRating(event, form) {
@@ -3918,7 +3979,7 @@ function renderCustomerRideTrackingPanel() {
       <div class="customer-tracking-map-frame"><div class="customer-tracking-map driver-map-canvas" data-customer-ride-map aria-label="Mapa del servicio activo">${hasDriverLocation ? "" : '<div class="customer-tracking-map-wait"><strong>Esperando GPS del conductor</strong><span>La moto aparecerá aquí cuando el conductor active la ubicación para este servicio.</span></div>'}</div></div>
       ${renderWaitingInformation(rideRequest, tracking, "customer")}
       ${renderJourneyTimeline({ ...rideRequest, ...tracking })}
-      <div class="customer-tracking-actions"><button class="button button-secondary small" type="button" data-refresh-customer-tracking>Actualizar mapa</button><span>${hasDriverLocation ? "Se muestra la última ubicación compartida." : "No se muestra ninguna ubicación hasta que el conductor la comparta."}</span></div>
+      <div class="customer-tracking-actions"><button class="button button-secondary small" type="button" data-refresh-customer-tracking>Actualizar mapa</button><button class="button button-secondary small" type="button" data-test-customer-voice>🔊 Probar voz</button><span>${hasDriverLocation ? "Se muestra la última ubicación compartida." : "No se muestra ninguna ubicación hasta que el conductor la comparta."}</span></div>
       <p class="customer-tracking-privacy">La línea amarilla/negra es una ruta referencial entre la última ubicación compartida, A y B. La navegación por calles y el tiempo estimado se conectarán con un proveedor GPS en la fase de producción.</p>
     </article>`;
 }
@@ -4794,6 +4855,12 @@ function bindDriverEvents() {
   app.querySelectorAll("[data-accept-ride]").forEach(button => {
     button.addEventListener("click", () => acceptRideRequest(button.dataset.acceptRide));
   });
+  app.querySelectorAll("[data-repeat-driver-route]").forEach(button => {
+    button.addEventListener("click", () => repeatDriverRoute(button.dataset.repeatDriverRoute));
+  });
+  app.querySelectorAll("[data-test-customer-voice]").forEach(button => {
+    button.addEventListener("click", testCustomerVoiceAlerts);
+  });
   app.querySelectorAll("[data-counter-offer-ride]").forEach(element => {
     if (element.matches("form")) element.addEventListener("submit", event => makeCounterOffer(event, element.dataset.counterOfferRide));
   });
@@ -5098,6 +5165,7 @@ async function acceptRideRequest(rideRequestId) {
     state.driverRideOffers = state.driverRideOffers.filter(offer => offer.id !== rideRequestId);
     state.application = await request("/driver-application/me");
     renderDashboard();
+    speakDriverAlert(buildDriverRouteVoiceMessage(state.driverCurrentRideRequest), true);
     showNotice("Solicitud aceptada. Pasaste al panel de servicio activo.");
   } catch (error) { showNotice(error.message, true); }
 }
