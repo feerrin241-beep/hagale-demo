@@ -519,25 +519,28 @@ function unlockDriverAlertsFromGesture() {
 window.addEventListener("pointerdown", unlockDriverAlertsFromGesture, { passive: true });
 window.addEventListener("keydown", unlockDriverAlertsFromGesture, { passive: true });
 
-async function playDriverOfferTone(force = false) {
+async function playDriverOfferTone(force = false, repeatCount = 1) {
   if (!force && !state.driverSoundAlertsEnabled) return;
   try {
     const context = await getDriverAudioContext();
     if (!context) return;
     const startedAt = context.currentTime + 0.02;
-    [880, 1174, 1568].forEach((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      const toneStart = startedAt + index * 0.16;
-      oscillator.type = "sine";
-      oscillator.frequency.setValueAtTime(frequency, toneStart);
-      gain.gain.setValueAtTime(0.0001, toneStart);
-      gain.gain.exponentialRampToValueAtTime(0.22, toneStart + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, toneStart + 0.14);
-      oscillator.connect(gain).connect(context.destination);
-      oscillator.start(toneStart);
-      oscillator.stop(toneStart + 0.16);
-    });
+    const tones = [880, 1174, 1568, 1174];
+    for (let repeat = 0; repeat < repeatCount; repeat += 1) {
+      tones.forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const toneStart = startedAt + repeat * 0.78 + index * 0.14;
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(frequency, toneStart);
+        gain.gain.setValueAtTime(0.0001, toneStart);
+        gain.gain.exponentialRampToValueAtTime(0.3, toneStart + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, toneStart + 0.13);
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start(toneStart);
+        oscillator.stop(toneStart + 0.15);
+      });
+    }
   } catch {
     // Algunos navegadores bloquean audio automático hasta que el conductor toca
     // "Activar avisos". La interfaz sigue funcionando con el aviso visual.
@@ -565,9 +568,9 @@ function speakDriverAlert(message, force = false) {
 function announceRideNotification(message, { alert = true } = {}) {
   showNotice(`🔔 ${message}`, false, alert);
   if (navigator.vibrate) {
-    navigator.vibrate([120, 70, 120]);
+    navigator.vibrate([160, 80, 160, 80, 220]);
   }
-  void playDriverOfferTone();
+  void playDriverOfferTone(false, 2);
   speakDriverAlert(message);
 }
 
@@ -599,7 +602,7 @@ function notifyDriverNewOffers(newOffers) {
   state.lastDriverOfferAlertAt = now;
 
   announceRideNotification(message);
-  void showDriverSystemNotification(newOfferCount);
+  void showDriverSystemNotification(offers);
 }
 
 async function requestDriverSystemNotificationPermission() {
@@ -610,12 +613,15 @@ async function requestDriverSystemNotificationPermission() {
   return (await Notification.requestPermission()) === "granted";
 }
 
-async function showDriverSystemNotification(newOfferCount) {
+async function showDriverSystemNotification(newOffers) {
   if (!state.driverSystemAlertsEnabled || !getDriverAlertSupport().system || Notification.permission !== "granted") return;
 
+  const offers = Array.isArray(newOffers) ? newOffers : [];
+  const newOfferCount = offers.length || Number(newOffers) || 0;
+  const firstOffer = offers[0];
   const title = "Nuevo servicio HÁGALE";
-  const body = newOfferCount === 1
-    ? "Tienes una solicitud cerca. Abre el panel conductor para revisarla."
+  const body = newOfferCount === 1 && firstOffer
+    ? `${formatCop(firstOffer.proposedPriceCop)} hacia ${summarizeAddressForVoice(firstOffer.destinationAddress)}. Recogida ${formatPickupProximity(firstOffer.pickupDistanceKilometers)}.`
     : `Tienes ${newOfferCount} solicitudes cerca. Abre el panel conductor para revisarlas.`;
   const options = {
     body,
