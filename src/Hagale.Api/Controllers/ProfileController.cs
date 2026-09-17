@@ -32,6 +32,16 @@ public sealed class ProfileController(IUserProfileService userProfileService) : 
             ? Ok(result.Value)
             : this.BusinessRuleViolation("profile", result.Error!);
     }
+
+    [HttpDelete("me")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> DeleteMine(CancellationToken cancellationToken)
+    {
+        var result = await userProfileService.DeactivateAsync(User.GetRequiredUserId(), cancellationToken);
+        return result.IsSuccess
+            ? NoContent()
+            : this.BusinessRuleViolation("profile", result.Error!);
+    }
 }
 
 public sealed record UpdateProfileRequest(

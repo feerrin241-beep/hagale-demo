@@ -6723,3 +6723,62 @@ body.welcome-view {
   .driver-shell.has-active-journey .driver-active-actions { display: grid; grid-template-columns: 1fr; margin-top: auto; gap: .5rem; }
   .driver-shell.has-active-journey .driver-active-actions .button { min-height: 3.5rem; border: 2px solid #111218; border-radius: .9rem; font-size: 1.05rem; font-weight: 1000; }
 }
+
+/* Ajustes operativos solicitados: A/B, tarifa grande y comunicacion visible. */
+.route-stop-pickup strong,
+.driver-sheet-route > div:first-child strong,
+.customer-tracking-route > div:first-child strong {
+  color: #ffffff !important;
+  font-weight: 1000;
+}
+
+.route-stop-destination strong,
+.driver-sheet-route > div:last-child strong,
+.customer-tracking-route > div:last-child strong {
+  color: #ffd800 !important;
+  font-weight: 1000;
+}
+
+.ride-price-focus input {
+  min-height: 4.4rem;
+  color: #111218;
+  background: #fff7b8;
+  font-size: clamp(1.9rem, 9vw, 3rem);
+  font-weight: 1000;
+  text-align: center;
+}
+
+.driver-request-row h3 {
+  color: #ffffff;
+  font-weight: 1000;
+}
+
+.driver-request-row p {
+  color: #ffd800;
+  font-weight: 1000;
+}
+
+.private-communication-card.is-active {
+  display: grid !important;
+}
+
+.private-communication-actions button:not(:disabled) {
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .driver-shell.has-active-journey .driver-active-card .private-communication-card {
+    display: grid !important;
+    padding: .68rem;
+    border-radius: .8rem;
+  }
+
+  .driver-shell.has-active-journey .private-communication-heading p,
+  .driver-shell.has-active-journey .private-communication-heading .eyebrow {
+    display: none;
+  }
+
+  .driver-shell.has-active-journey .ride-chat-messages {
+    max-height: 7.5rem;
+  }
+}

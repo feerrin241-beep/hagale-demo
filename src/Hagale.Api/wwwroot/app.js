@@ -397,6 +397,48 @@ function formatCop(value) {
     maximumFractionDigits: 0
   }).format(value);
 }
+function formatCopForVoice(value) {
+  const amount = Math.max(0, Math.round(Number(value) || 0));
+  return `${new Intl.NumberFormat("es-CO").format(amount)} pesos colombianos`;
+}
+
+function numberToSpanishUnderOneThousand(value) {
+  const n = Number(value);
+  const units = ["cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez", "once", "doce", "trece", "catorce", "quince", "dieciseis", "diecisiete", "dieciocho", "diecinueve", "veinte", "veintiuno", "veintidos", "veintitres", "veinticuatro", "veinticinco", "veintiseis", "veintisiete", "veintiocho", "veintinueve"];
+  const tens = ["", "", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+  const hundreds = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+  if (!Number.isFinite(n)) return String(value);
+  if (n < 30) return units[n];
+  if (n < 100) return `${tens[Math.floor(n / 10)]}${n % 10 ? ` y ${units[n % 10]}` : ""}`;
+  if (n === 100) return "cien";
+  return `${hundreds[Math.floor(n / 100)]}${n % 100 ? ` ${numberToSpanishUnderOneThousand(n % 100)}` : ""}`;
+}
+
+function numberToSpanishForVoice(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n < 0) return String(value);
+  if (n < 1000) return numberToSpanishUnderOneThousand(n);
+  if (n < 10000) {
+    const thousands = Math.floor(n / 1000);
+    const rest = n % 1000;
+    return `${thousands === 1 ? "mil" : `${numberToSpanishUnderOneThousand(thousands)} mil`}${rest ? ` ${numberToSpanishUnderOneThousand(rest)}` : ""}`;
+  }
+  return new Intl.NumberFormat("es-CO").format(n);
+}
+
+function normalizeAddressForVoice(address) {
+  return String(address || "")
+    .split("·")[0]
+    .replace(/\bcl\.?\b/gi, "calle")
+    .replace(/\bcra\.?\b/gi, "carrera")
+    .replace(/\bkr\.?\b/gi, "carrera")
+    .replace(/\bav\.?\b/gi, "avenida")
+    .replace(/#/g, " numero ")
+    .replace(/-/g, " con ")
+    .replace(/\b\d+\b/g, match => numberToSpanishForVoice(match))
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function formatDateTime(value) {
   return value
@@ -508,11 +550,12 @@ async function getDriverAudioContext() {
 
 function unlockDriverAlertsFromGesture() {
   if (!state.profile) return;
-  if (!state.driverSoundAlertsEnabled && !state.driverVoiceAlertsEnabled) return;
   state.driverAlertsUnlocked = true;
-  void getDriverAudioContext().catch(() => {
-    // El navegador puede mantener el audio bloqueado hasta otra interacción.
-  });
+  if (state.driverSoundAlertsEnabled || state.driverVoiceAlertsEnabled) {
+    void getDriverAudioContext().catch(() => {
+      // El navegador puede mantener el audio bloqueado hasta otra interacción.
+    });
+  }
   window.speechSynthesis?.getVoices?.();
 }
 
@@ -565,13 +608,13 @@ function speakDriverAlert(message, force = false) {
   }
 }
 
-function announceRideNotification(message, { alert = true } = {}) {
+function announceRideNotification(message, { alert = true, forceVoice = false, forceSound = false } = {}) {
   showNotice(`🔔 ${message}`, false, alert);
   if (navigator.vibrate) {
     navigator.vibrate([160, 80, 160, 80, 220]);
   }
-  void playDriverOfferTone(false, 2);
-  speakDriverAlert(message);
+  void playDriverOfferTone(forceSound, 2);
+  speakDriverAlert(message, forceVoice);
 }
 
 function summarizeAddressForVoice(address) {
@@ -580,7 +623,8 @@ function summarizeAddressForVoice(address) {
     .replace(/\s+/g, " ")
     .trim();
   if (!clean) return "el destino indicado";
-  return clean.length > 76 ? `${clean.slice(0, 73)}...` : clean;
+  const voiceReady = normalizeAddressForVoice(clean);
+  return voiceReady.length > 90 ? `${voiceReady.slice(0, 87)}...` : voiceReady;
 }
 
 function buildDriverOfferVoiceMessage(offer) {
@@ -588,7 +632,7 @@ function buildDriverOfferVoiceMessage(offer) {
   const destination = summarizeAddressForVoice(offer.destinationAddress);
   const pickup = summarizeAddressForVoice(offer.pickupAddress);
   const pickupDistance = formatPickupProximity(offer.pickupDistanceKilometers);
-  return `Nuevo servicio hacia ${destination}, por ${formatCop(offer.proposedPriceCop)}. Recogida en ${pickup}, ${pickupDistance}.`;
+  return `Nuevo servicio hacia ${destination}, por ${formatCopForVoice(offer.proposedPriceCop)}. Recogida en ${pickup}, ${pickupDistance}.`;
 }
 
 function notifyDriverNewOffers(newOffers) {
@@ -1823,7 +1867,7 @@ async function refreshCustomerRideTracking({ notifyJourneyChange = false } = {})
   if (tracking?.status && tracking.status !== activeRide.status) {
     renderDashboard();
     if (notifyJourneyChange) {
-      announceRideNotification(`Estado actualizado: ${label[tracking.status] || tracking.status}.`);
+      announceRideNotification(buildCustomerRideVoiceMessage(updatedRide, tracking.status), { forceVoice: true, forceSound: true });
     }
     return tracking;
   }
@@ -1872,13 +1916,25 @@ async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
       const message = currentOpenRide
         ? `Estado actualizado: ${label[currentOpenRide.status] || currentOpenRide.status}.`
         : "Tu servicio anterior ya no está activo.";
-      announceRideNotification(message);
+      announceRideNotification(currentOpenRide ? buildCustomerRideVoiceMessage(currentOpenRide, currentOpenRide.status) : message, { forceVoice: true, forceSound: true });
     }
   }
 
   return currentOpenRide;
 }
 
+function buildCustomerRideVoiceMessage(rideRequest, status) {
+  const rideStatus = status || rideRequest?.status;
+  const pickup = summarizeAddressForVoice(rideRequest?.pickupAddress);
+  const destination = summarizeAddressForVoice(rideRequest?.destinationAddress);
+  const fare = formatCopForVoice(rideRequest?.proposedPriceCop);
+  if (rideStatus === "Accepted") return `Tu servicio fue aceptado. Recogida en ${pickup}, destino ${destination}, valor ${fare}.`;
+  if (rideStatus === "DriverEnRoute") return `Tu conductor va en camino al punto de recogida: ${pickup}. Valor del servicio: ${fare}.`;
+  if (rideStatus === "DriverArrived") return `Tu conductor llegó al punto de recogida: ${pickup}.`;
+  if (rideStatus === "InProgress") return `Viaje iniciado hacia ${destination}.`;
+  if (rideStatus === "Completed") return `Viaje finalizado. Gracias por usar Hagale.`;
+  return `Estado actualizado: ${label[rideStatus] || rideStatus || "servicio"}.`;
+}
 function syncCustomerTrackingPolling(isCustomerMode) {
   window.clearInterval(state.customerTrackingPollingTimer);
   state.customerTrackingPollingTimer = null;
@@ -3132,6 +3188,7 @@ function renderDashboard() {
   if (refreshProfile) refreshProfile.addEventListener("click", loadDashboard);
   const profileForm = app.querySelector("#profile-form");
   if (profileForm) profileForm.addEventListener("submit", updateProfile);
+  app.querySelector("[data-delete-account]")?.addEventListener("click", deleteMyAccount);
   bindSafetyEvents();
   bindDriverEvents();
   bindAdminEvents();
@@ -3158,7 +3215,7 @@ function renderProfilePanel(profile) {
           <div class="field"><label for="profile-last-name">Apellido</label><input id="profile-last-name" name="lastName" value="${escapeHtml(profile.lastName)}" minlength="2" required></div>
         </div>
         <div class="field"><label for="profile-phone">Celular</label><input id="profile-phone" name="phoneNumber" value="${escapeHtml(profile.phoneNumber)}" inputmode="tel" pattern="\\+[1-9]\\d{7,14}" required></div>
-        <div class="button-row"><button class="button" type="submit">Guardar cambios</button><span class="muted small-text">Registro: ${new Date(profile.registeredAtUtc).toLocaleDateString("es-CO")}</span></div>
+        <div class="button-row"><button class="button" type="submit">Guardar cambios</button><button class="button button-danger" type="button" data-delete-account>Eliminar cuenta</button><span class="muted small-text">Registro: ${new Date(profile.registeredAtUtc).toLocaleDateString("es-CO")}</span></div>
       </form>
     </article>`;
 }
@@ -3379,7 +3436,7 @@ function renderPrivateCommunicationCard(rideRequest = null) {
       </form>
       <div class="private-communication-actions" aria-label="Funciones de comunicación">
         <button class="is-selected" type="button" disabled>Chat interno</button>
-        <button type="button" disabled title="Las llamadas privadas se habilitarán con un proveedor de voz">Llamar</button>
+        <button type="button" data-private-call="${escapeHtml(rideId)}" title="Llamada privada de esta carrera">Llamar</button>
         <button type="button" disabled title="Telegram queda como respaldo de alertas">Telegram</button>
       </div>
     </section>`;
@@ -3446,9 +3503,18 @@ async function sendRideChatMessage(event, form) {
   }
 }
 
+
+function handlePrivateCall(rideRequestId) {
+  const rideId = String(rideRequestId || "");
+  if (!rideId) return;
+  showNotice("Llamada privada preparada para esta carrera. Falta conectar el proveedor de voz para no exponer celulares.", true);
+}
 function bindRideChatEvents() {
   app.querySelectorAll("[data-ride-chat-form]").forEach(form => {
     form.addEventListener("submit", event => sendRideChatMessage(event, form));
+  });
+  app.querySelectorAll("[data-private-call]").forEach(button => {
+    button.addEventListener("click", () => handlePrivateCall(button.dataset.privateCall));
   });
   app.querySelectorAll("[data-refresh-ride-chat]").forEach(button => {
     button.addEventListener("click", async () => {
@@ -3846,7 +3912,7 @@ function renderCustomerRideTrackingPanel() {
       <div class="section-title"><div><span class="eyebrow">Servicio activo</span><h2>${statusLabel}</h2><p class="muted" data-customer-tracking-status>${customerTrackingMessage(rideRequest, tracking)}</p></div>${statusBadge(status)}</div>
       ${renderCustomerStageAlert(status)}
       ${renderAssignedDriverSummary(tracking?.driver, status)}
-      ${renderPrivateCommunicationCard()}
+      ${renderPrivateCommunicationCard(rideRequest)}
       ${renderCustomerTripGlance(rideRequest, tracking)}
       <div class="customer-tracking-route"><div><span class="route-letter route-letter-a">A</span><p><small>Recogida</small><strong>${escapeHtml(rideRequest.pickupAddress)}</strong></p></div><div><span class="route-letter route-letter-b">B</span><p><small>Destino</small><strong>${escapeHtml(rideRequest.destinationAddress)}</strong></p></div></div>
       <div class="customer-tracking-map-frame"><div class="customer-tracking-map driver-map-canvas" data-customer-ride-map aria-label="Mapa del servicio activo">${hasDriverLocation ? "" : '<div class="customer-tracking-map-wait"><strong>Esperando GPS del conductor</strong><span>La moto aparecerá aquí cuando el conductor active la ubicación para este servicio.</span></div>'}</div></div>
@@ -3986,12 +4052,12 @@ function clearCustomerRideDraft() {
 function buildAddressWithNeighborhood(address, neighborhood) {
   const base = String(address || "").trim();
   const detail = String(neighborhood || "").trim();
-  return detail ? `${base} · Barrio/referencia: ${detail}` : base;
+  return detail ? `${base} · Barrio: ${detail}` : base;
 }
 
 function renderDraftAddressSummary(address, neighborhood) {
   const detail = String(neighborhood || "").trim();
-  return `${escapeHtml(address || "")}${detail ? `<small>Barrio/ref.: ${escapeHtml(detail)}</small>` : ""}`;
+  return `${escapeHtml(address || "")}${detail ? `<small>Barrio: ${escapeHtml(detail)}</small>` : ""}`;
 }
 
 function setCustomerRideStep(step) {
@@ -3999,7 +4065,10 @@ function setCustomerRideStep(step) {
   state.customerRideStep = nextStep;
   sessionStorage.setItem(customerRideStepKey, nextStep);
   renderDashboard();
-  if (nextStep === "details") void refreshCustomerRideQuote();
+  if (nextStep === "details") {
+    window.setTimeout(() => app.querySelector("#ride-proposed-price")?.select(), 50);
+    void refreshCustomerRideQuote();
+  }
 }
 
 function renderCustomerRideStepIndicator(activeStep) {
@@ -4036,8 +4105,8 @@ function renderCustomerRideLocationsStep() {
         <div class="field wide route-entry route-entry-a">
           <label for="ride-pickup"><span aria-hidden="true">A</span> Punto de recogida</label>
           <input id="ride-pickup" name="pickupAddress" value="${escapeHtml(draft.pickupAddress)}" minlength="5" maxlength="250" autocomplete="street-address" placeholder="Ej.: Calle 72 # 10-07" required>
-          <label class="sub-field-label" for="ride-pickup-neighborhood">Barrio o referencia</label>
-          <input id="ride-pickup-neighborhood" name="pickupNeighborhood" value="${escapeHtml(draft.pickupNeighborhood)}" maxlength="120" autocomplete="address-level3" placeholder="Ej.: Cabecera, portería, local 12">
+          <label class="sub-field-label" for="ride-pickup-neighborhood">Barrio</label>
+          <input id="ride-pickup-neighborhood" name="pickupNeighborhood" value="${escapeHtml(draft.pickupNeighborhood)}" maxlength="120" autocomplete="address-level3" placeholder="Ej.: Cabecera">
           <div class="location-actions">
             <button class="location-button" type="button" data-capture-pickup-location>Usar GPS</button>
             <button class="location-button" type="button" data-open-ride-map="pickup">Elegir en el mapa</button>
@@ -4047,8 +4116,8 @@ function renderCustomerRideLocationsStep() {
         <div class="field wide route-entry route-entry-b">
           <label for="ride-destination"><span aria-hidden="true">B</span> Destino</label>
           <input id="ride-destination" name="destinationAddress" value="${escapeHtml(draft.destinationAddress)}" minlength="5" maxlength="250" autocomplete="street-address" placeholder="Ej.: Centro Comercial Cacique" required>
-          <label class="sub-field-label" for="ride-destination-neighborhood">Barrio o referencia del destino</label>
-          <input id="ride-destination-neighborhood" name="destinationNeighborhood" value="${escapeHtml(draft.destinationNeighborhood)}" maxlength="120" autocomplete="address-level3" placeholder="Ej.: Provenza, portería, local">
+          <label class="sub-field-label" for="ride-destination-neighborhood">Barrio del destino</label>
+          <input id="ride-destination-neighborhood" name="destinationNeighborhood" value="${escapeHtml(draft.destinationNeighborhood)}" maxlength="120" autocomplete="address-level3" placeholder="Ej.: Provenza">
           <div class="location-actions">
             <button class="location-button" type="button" data-capture-destination-location>Usar GPS</button>
             <button class="location-button" type="button" data-open-ride-map="destination">Elegir en el mapa</button>
@@ -4107,7 +4176,7 @@ function renderCustomerRideDetailsStep(activePricingRules) {
       </div>
       <form id="ride-request-form" class="form-grid ride-request-form customer-ride-form">
         <div class="field wide"><label for="ride-pricing-rule">Ciudad y servicio</label><select id="ride-pricing-rule" name="pricingRuleKey">${pricingOptions}</select></div>
-        <div class="field wide ride-price-field"><label for="ride-proposed-price">Tu oferta (COP)</label><input id="ride-proposed-price" name="proposedPriceCop" type="number" min="${initialMinimumFare}" step="1" value="${proposedPrice}" required><span class="small-text">El valor nunca puede ser menor a la tarifa mínima.</span></div>
+        <div class="field wide ride-price-field ride-price-focus"><label for="ride-proposed-price">Escribe tu tarifa</label><input id="ride-proposed-price" name="proposedPriceCop" type="number" min="${initialMinimumFare}" step="1" value="${proposedPrice}" inputmode="numeric" autofocus required><span class="small-text">Valor sugerido: ${formatCop(proposedPrice)}. Puedes escribirlo de una vez.</span></div>
         <p id="minimum-fare-hint" class="callout wide">Tarifa mínima vigente: ${formatCop(initialMinimumFare)}. Puedes proponer un valor mayor para atraer más conductores.</p>
         <p id="ride-price-reference" class="ride-price-reference wide" aria-live="polite">${renderCustomerRideQuote()}</p>
         <fieldset class="ride-options-card wide">
@@ -4815,6 +4884,18 @@ function bindAdminEvents() {
   if (createEmergencyChannelForm) createEmergencyChannelForm.addEventListener("submit", createEmergencyServiceChannel);
 }
 
+
+async function deleteMyAccount() {
+  const confirmed = window.confirm("¿Eliminar esta cuenta de cliente? Se cerrará la sesión y la cuenta quedará desactivada, conservando historial de servicios por seguridad.");
+  if (!confirmed) return;
+  try {
+    await request("/profile/me", { method: "DELETE", data: {} });
+    showNotice("Cuenta desactivada.");
+    signOut(false);
+  } catch (error) {
+    showNotice(error.message || "No fue posible eliminar la cuenta.", true);
+  }
+}
 async function updateProfile(event) {
   event.preventDefault();
   try {
@@ -5013,10 +5094,11 @@ async function acceptRideRequest(rideRequestId) {
       data: {}
     });
     state.selectedDriverOfferId = null;
+    state.driverNav = "requests";
     state.driverRideOffers = state.driverRideOffers.filter(offer => offer.id !== rideRequestId);
     state.application = await request("/driver-application/me");
     renderDashboard();
-    showNotice("Solicitud aceptada. Ahora estás ocupado.");
+    showNotice("Solicitud aceptada. Pasaste al panel de servicio activo.");
   } catch (error) { showNotice(error.message, true); }
 }
 

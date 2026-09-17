@@ -48,6 +48,23 @@ public sealed class IdentityUserProfileService(UserManager<AppUser> userManager)
             : ApplicationResult<UserProfileDto>.Failure("No fue posible actualizar el perfil.");
     }
 
+
+    public async Task<ApplicationResult<bool>> DeactivateAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null || !user.IsActive)
+        {
+            return ApplicationResult<bool>.Failure("La cuenta no está disponible.");
+        }
+
+        user.IsActive = false;
+        user.LockoutEnabled = true;
+        user.LockoutEnd = DateTimeOffset.UtcNow.AddYears(100);
+        var result = await userManager.UpdateAsync(user);
+        return result.Succeeded
+            ? ApplicationResult<bool>.Success(true)
+            : ApplicationResult<bool>.Failure("No fue posible desactivar la cuenta.");
+    }
     private async Task<UserProfileDto> MapAsync(AppUser user)
     {
         var roles = await userManager.GetRolesAsync(user);

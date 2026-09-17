@@ -18,4 +18,5 @@ public interface IUserProfileService
 {
     Task<ApplicationResult<UserProfileDto>> GetAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<ApplicationResult<UserProfileDto>> UpdateAsync(Guid userId, UpdateUserProfileCommand command, CancellationToken cancellationToken = default);
+    Task<ApplicationResult<bool>> DeactivateAsync(Guid userId, CancellationToken cancellationToken = default);
 }
