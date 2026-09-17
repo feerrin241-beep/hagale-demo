@@ -3162,6 +3162,58 @@ body.welcome-view {
 .driver-shell .map-status.is-live { border-color: #e8c100; color: #554300; background: #fff8cf; }
 .driver-shell .map-status.is-live span { background: #d7a900; box-shadow: 0 0 0 .22rem rgba(255,216,0,.2); }
 
+.driver-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .65rem;
+}
+
+.driver-quick-action {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: .08rem .5rem;
+  min-height: 4.6rem;
+  padding: .78rem;
+  border: 1px solid #111218;
+  border-radius: .85rem;
+  color: #111218;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.driver-quick-action > span {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  color: #111218;
+  background: #ffd800;
+  font-weight: 1000;
+}
+
+.driver-quick-action strong { overflow-wrap: anywhere; font-size: .96rem; line-height: 1.05; }
+.driver-quick-action small { color: #56575f; font-weight: 850; line-height: 1.15; }
+.driver-quick-action.is-active,
+.driver-quick-action.is-ready { background: #fff4ad; box-shadow: inset 0 0 0 2px rgba(255,216,0,.6); }
+
+@media (max-width: 760px) {
+  .driver-quick-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .5rem;
+  }
+
+  .driver-quick-action {
+    min-height: 4.25rem;
+    padding: .68rem;
+    border-radius: .75rem;
+  }
+}
+
 /* Barra móvil del conductor: conserva la operación real y adopta el lenguaje
    visual negro/amarillo de HÁGALE, sin simular información de conductores. */
 @media (max-width: 760px) {

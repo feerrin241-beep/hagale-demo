@@ -2984,33 +2984,55 @@ function renderCustomerPanelContent(panel, profile, driver, accountSummary, isAd
 
 function renderDriverWorkspacePanel(driver, hasActiveJourney) {
   const activePanel = state.driverNav || "requests";
+  const quickActions = renderDriverQuickActions(activePanel, hasActiveJourney);
   if (activePanel === "account") {
     return "";
   }
 
   if (activePanel === "dispatch") {
-    return `${renderDriverMap(driver)}${renderDriverDispatchPanel(driver)}`;
+    return `${quickActions}${renderDriverMap(driver)}${renderDriverDispatchPanel(driver)}`;
   }
 
   if (activePanel === "performance") {
-    return renderDriverPerformancePanel();
+    return `${quickActions}${renderDriverPerformancePanel()}`;
   }
 
   if (activePanel === "wallet") {
-    return renderDriverWalletPanel();
+    return `${quickActions}${renderDriverWalletPanel()}`;
   }
 
   if (activePanel === "settings") {
-    return `${renderDriverPanel(driver, true)}${renderSafetyPanel("conductor")}`;
+    return `${quickActions}${renderDriverPanel(driver, true)}${renderSafetyPanel("conductor")}`;
   }
 
-  return `${hasActiveJourney ? renderDriverMap(driver) : ""}${renderDriverRideRequestsPanel()}`;
+  return `${quickActions}${hasActiveJourney ? renderDriverMap(driver) : ""}${renderDriverRideRequestsPanel()}`;
 }
 
 function getDriverLiveModeLabel(driver) {
   if (driver?.availabilityStatus === "Busy") return "OCUPADO";
   if (driver?.availabilityStatus === "Available") return "LIBRE";
   return "DESCONECTADO";
+}
+
+function renderDriverQuickActions(activePanel, hasActiveJourney) {
+  const visibleOfferCount = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id)).length;
+  const chatMeta = hasActiveJourney ? "Carrera activa" : "Al aceptar";
+  const items = [
+    { id: "requests", title: "Solicitudes", meta: `${visibleOfferCount} cerca`, icon: "≡" },
+    { id: "performance", title: "Desempeño", meta: "Nivel y km", icon: "↗" },
+    { id: "wallet", title: "Cartera", meta: "Saldo", icon: "$" },
+    { id: "requests", title: "Chat privado", meta: chatMeta, icon: "✉", extraClass: hasActiveJourney ? "is-ready" : "" }
+  ];
+
+  return `
+    <nav class="driver-quick-actions" aria-label="Accesos rápidos del conductor">
+      ${items.map(item => `
+        <button class="driver-quick-action ${activePanel === item.id ? "is-active" : ""} ${item.extraClass || ""}" type="button" data-driver-nav="${item.id}">
+          <span aria-hidden="true">${escapeHtml(item.icon)}</span>
+          <strong>${escapeHtml(item.title)}</strong>
+          <small>${escapeHtml(item.meta)}</small>
+        </button>`).join("")}
+    </nav>`;
 }
 
 function renderDashboard() {
