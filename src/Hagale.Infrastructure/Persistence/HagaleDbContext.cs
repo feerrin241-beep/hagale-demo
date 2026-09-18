@@ -201,6 +201,12 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
             entity.Property(rule => rule.AdditionalWaitingFarePerMinuteCop)
                 .HasDefaultValue(PricingRule.DefaultAdditionalWaitingFarePerMinuteCop)
                 .IsRequired();
+            entity.Property(rule => rule.FairOfferMinimumPercent)
+                .HasDefaultValue(PricingRule.DefaultFairOfferMinimumPercent)
+                .IsRequired();
+            entity.Property(rule => rule.FavorableOfferMinimumPercent)
+                .HasDefaultValue(PricingRule.DefaultFavorableOfferMinimumPercent)
+                .IsRequired();
             entity.Property(rule => rule.UpdatedAtUtc).IsRequired();
             ConfigureConcurrencyToken(entity.Property(rule => rule.RowVersion), usesPostgres);
             entity.HasIndex(rule => new { rule.CityCode, rule.ServiceType }).IsUnique();

@@ -287,10 +287,15 @@ public sealed class RideRequestService(
         return pendingRequests
             .OrderBy(item => item.PickupDistance ?? decimal.MaxValue)
             .ThenBy(item => item.Request.RequestedAtUtc)
-            .Select(item => MapForDriver(
-                item.Request,
-                item.PickupDistance,
-                FindDirectDistanceReferenceFare(activePricingRules, item.Request)))
+            .Select(item =>
+            {
+                var pricingRule = FindPricingRule(activePricingRules, item.Request);
+                return MapForDriver(
+                    item.Request,
+                    item.PickupDistance,
+                    CalculateDirectDistanceReferenceFare(pricingRule, item.Request),
+                    pricingRule);
+            })
             .ToArray();
     }
 
@@ -317,7 +322,8 @@ public sealed class RideRequestService(
         return MapForDriver(
             request,
             CalculatePickupDistance(driver, request),
-            CalculateDirectDistanceReferenceFare(pricingRule, request));
+            CalculateDirectDistanceReferenceFare(pricingRule, request),
+            pricingRule);
     }
 
     public async Task<DriverActivitySummaryDto> GetActivitySummaryAsync(
@@ -504,7 +510,8 @@ public sealed class RideRequestService(
             return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
                 request,
                 CalculatePickupDistance(driver, request),
-                CalculateDirectDistanceReferenceFare(pricingRule, request)));
+                CalculateDirectDistanceReferenceFare(pricingRule, request),
+                pricingRule));
         }
         catch (ConcurrentUpdateException)
         {
@@ -625,7 +632,8 @@ public sealed class RideRequestService(
     private static DriverRideRequestDto MapForDriver(
         RideRequest request,
         decimal? pickupDistanceKilometers = null,
-        int? directDistanceReferenceFareCop = null) => new(
+        int? directDistanceReferenceFareCop = null,
+        PricingRule? pricingRule = null) => new(
         request.Id,
         request.PickupAddress,
         request.DestinationAddress,
@@ -657,7 +665,9 @@ public sealed class RideRequestService(
         request.PickupLatitude,
         request.PickupLongitude,
         request.DestinationLatitude,
-        request.DestinationLongitude);
+        request.DestinationLongitude,
+        pricingRule?.FairOfferMinimumPercent ?? PricingRule.DefaultFairOfferMinimumPercent,
+        pricingRule?.FavorableOfferMinimumPercent ?? PricingRule.DefaultFavorableOfferMinimumPercent);
 
     private static decimal? CalculatePickupDistance(DriverProfile driver, RideRequest request) =>
         driver.LastKnownLatitude.HasValue && driver.LastKnownLongitude.HasValue &&
@@ -702,11 +712,16 @@ public sealed class RideRequestService(
         IReadOnlyCollection<PricingRule> activePricingRules,
         RideRequest request)
     {
-        var pricingRule = activePricingRules.FirstOrDefault(rule =>
-            rule.CityCode.Equals(request.OperatingCityCode, StringComparison.OrdinalIgnoreCase) &&
-            rule.ServiceType == request.ServiceType);
+        var pricingRule = FindPricingRule(activePricingRules, request);
         return CalculateDirectDistanceReferenceFare(pricingRule, request);
     }
+
+    private static PricingRule? FindPricingRule(
+        IReadOnlyCollection<PricingRule> pricingRules,
+        RideRequest request) =>
+        pricingRules.FirstOrDefault(rule =>
+            rule.CityCode.Equals(request.OperatingCityCode, StringComparison.OrdinalIgnoreCase) &&
+            rule.ServiceType == request.ServiceType);
 
     private static int? CalculateDirectDistanceReferenceFare(PricingRule? pricingRule, RideRequest request)
     {

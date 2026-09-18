@@ -1,5 +1,6 @@
 using Hagale.Application.Common;
 using Hagale.Domain.Drivers;
+using Hagale.Domain.Pricing;
 using Hagale.Domain.Rides;
 
 namespace Hagale.Application.Rides;
@@ -85,7 +86,9 @@ public sealed record DriverRideRequestDto(
     decimal? PickupLatitude,
     decimal? PickupLongitude,
     decimal? DestinationLatitude,
-    decimal? DestinationLongitude);
+    decimal? DestinationLongitude,
+    int FairOfferMinimumPercent = PricingRule.DefaultFairOfferMinimumPercent,
+    int FavorableOfferMinimumPercent = PricingRule.DefaultFavorableOfferMinimumPercent);
 
 public sealed record DriverActivitySummaryDto(
     int CompletedRideCount,

@@ -25,6 +25,16 @@ public static class DatabaseInitializer
             await database.Database.MigrateAsync(cancellationToken);
         }
 
+        if (database.Database.IsNpgsql())
+        {
+            await database.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE "PricingRules"
+                    ADD COLUMN IF NOT EXISTS "FairOfferMinimumPercent" integer NOT NULL DEFAULT 90;
+                ALTER TABLE "PricingRules"
+                    ADD COLUMN IF NOT EXISTS "FavorableOfferMinimumPercent" integer NOT NULL DEFAULT 105;
+                """, cancellationToken);
+        }
+
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
         foreach (var roleName in HagaleRoles.All)
         {

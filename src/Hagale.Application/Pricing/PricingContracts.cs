@@ -13,7 +13,9 @@ public sealed record CreatePricingRuleCommand(
     int FarePerMinuteCop,
     bool IsActive,
     int IncludedWaitingMinutes = PricingRule.DefaultIncludedWaitingMinutes,
-    int AdditionalWaitingFarePerMinuteCop = PricingRule.DefaultAdditionalWaitingFarePerMinuteCop);
+    int AdditionalWaitingFarePerMinuteCop = PricingRule.DefaultAdditionalWaitingFarePerMinuteCop,
+    int FairOfferMinimumPercent = PricingRule.DefaultFairOfferMinimumPercent,
+    int FavorableOfferMinimumPercent = PricingRule.DefaultFavorableOfferMinimumPercent);
 
 public sealed record UpdatePricingRuleCommand(
     int MinimumFareCop,
@@ -22,7 +24,9 @@ public sealed record UpdatePricingRuleCommand(
     int FarePerMinuteCop,
     bool IsActive,
     int IncludedWaitingMinutes = PricingRule.DefaultIncludedWaitingMinutes,
-    int AdditionalWaitingFarePerMinuteCop = PricingRule.DefaultAdditionalWaitingFarePerMinuteCop);
+    int AdditionalWaitingFarePerMinuteCop = PricingRule.DefaultAdditionalWaitingFarePerMinuteCop,
+    int FairOfferMinimumPercent = PricingRule.DefaultFairOfferMinimumPercent,
+    int FavorableOfferMinimumPercent = PricingRule.DefaultFavorableOfferMinimumPercent);
 
 public sealed record PricingQuoteRequest(
     string CityCode,
@@ -41,7 +45,9 @@ public sealed record PricingRuleDto(
     int IncludedWaitingMinutes,
     int AdditionalWaitingFarePerMinuteCop,
     bool IsActive,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    int FairOfferMinimumPercent = PricingRule.DefaultFairOfferMinimumPercent,
+    int FavorableOfferMinimumPercent = PricingRule.DefaultFavorableOfferMinimumPercent);
 
 public sealed record PricingQuoteDto(
     string CityCode,

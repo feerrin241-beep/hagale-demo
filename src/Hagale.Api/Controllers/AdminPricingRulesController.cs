@@ -32,7 +32,9 @@ public sealed class AdminPricingRulesController(IPricingService pricingService) 
                 request.FarePerMinuteCop,
                 request.IsActive,
                 request.IncludedWaitingMinutes,
-                request.AdditionalWaitingFarePerMinuteCop),
+                request.AdditionalWaitingFarePerMinuteCop,
+                request.FairOfferMinimumPercent,
+                request.FavorableOfferMinimumPercent),
             cancellationToken);
         return result.IsSuccess
             ? StatusCode(StatusCodes.Status201Created, result.Value)
@@ -55,7 +57,9 @@ public sealed class AdminPricingRulesController(IPricingService pricingService) 
                 request.FarePerMinuteCop,
                 request.IsActive,
                 request.IncludedWaitingMinutes,
-                request.AdditionalWaitingFarePerMinuteCop),
+                request.AdditionalWaitingFarePerMinuteCop,
+                request.FairOfferMinimumPercent,
+                request.FavorableOfferMinimumPercent),
             cancellationToken);
         return result.IsSuccess
             ? Ok(result.Value)
@@ -72,7 +76,9 @@ public sealed record CreatePricingRuleRequest(
     [Range(0, int.MaxValue)] int FarePerMinuteCop,
     bool IsActive,
     [Range(0, 1_440)] int IncludedWaitingMinutes = PricingRule.DefaultIncludedWaitingMinutes,
-    [Range(0, int.MaxValue)] int AdditionalWaitingFarePerMinuteCop = PricingRule.DefaultAdditionalWaitingFarePerMinuteCop);
+    [Range(0, int.MaxValue)] int AdditionalWaitingFarePerMinuteCop = PricingRule.DefaultAdditionalWaitingFarePerMinuteCop,
+    [Range(1, 1_000)] int FairOfferMinimumPercent = PricingRule.DefaultFairOfferMinimumPercent,
+    [Range(1, 1_000)] int FavorableOfferMinimumPercent = PricingRule.DefaultFavorableOfferMinimumPercent);
 
 public sealed record UpdatePricingRuleRequest(
     [Range(1, int.MaxValue)] int MinimumFareCop,
@@ -81,4 +87,6 @@ public sealed record UpdatePricingRuleRequest(
     [Range(0, int.MaxValue)] int FarePerMinuteCop,
     bool IsActive,
     [Range(0, 1_440)] int IncludedWaitingMinutes = PricingRule.DefaultIncludedWaitingMinutes,
-    [Range(0, int.MaxValue)] int AdditionalWaitingFarePerMinuteCop = PricingRule.DefaultAdditionalWaitingFarePerMinuteCop);
+    [Range(0, int.MaxValue)] int AdditionalWaitingFarePerMinuteCop = PricingRule.DefaultAdditionalWaitingFarePerMinuteCop,
+    [Range(1, 1_000)] int FairOfferMinimumPercent = PricingRule.DefaultFairOfferMinimumPercent,
+    [Range(1, 1_000)] int FavorableOfferMinimumPercent = PricingRule.DefaultFavorableOfferMinimumPercent);

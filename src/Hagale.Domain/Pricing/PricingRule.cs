@@ -7,6 +7,8 @@ public sealed class PricingRule
 {
     public const int DefaultIncludedWaitingMinutes = 5;
     public const int DefaultAdditionalWaitingFarePerMinuteCop = 1_000;
+    public const int DefaultFairOfferMinimumPercent = 90;
+    public const int DefaultFavorableOfferMinimumPercent = 105;
 
     private PricingRule()
     {
@@ -22,7 +24,9 @@ public sealed class PricingRule
         bool isActive,
         DateTimeOffset updatedAtUtc,
         int includedWaitingMinutes = DefaultIncludedWaitingMinutes,
-        int additionalWaitingFarePerMinuteCop = DefaultAdditionalWaitingFarePerMinuteCop)
+        int additionalWaitingFarePerMinuteCop = DefaultAdditionalWaitingFarePerMinuteCop,
+        int fairOfferMinimumPercent = DefaultFairOfferMinimumPercent,
+        int favorableOfferMinimumPercent = DefaultFavorableOfferMinimumPercent)
     {
         Id = Guid.NewGuid();
         Apply(
@@ -35,7 +39,9 @@ public sealed class PricingRule
             isActive,
             updatedAtUtc,
             includedWaitingMinutes,
-            additionalWaitingFarePerMinuteCop);
+            additionalWaitingFarePerMinuteCop,
+            fairOfferMinimumPercent,
+            favorableOfferMinimumPercent);
     }
 
     public Guid Id { get; private set; }
@@ -47,6 +53,8 @@ public sealed class PricingRule
     public int FarePerMinuteCop { get; private set; }
     public int IncludedWaitingMinutes { get; private set; }
     public int AdditionalWaitingFarePerMinuteCop { get; private set; }
+    public int FairOfferMinimumPercent { get; private set; }
+    public int FavorableOfferMinimumPercent { get; private set; }
     public bool IsActive { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
     public byte[] RowVersion { get; private set; } = null!;
@@ -59,7 +67,9 @@ public sealed class PricingRule
         bool isActive,
         DateTimeOffset updatedAtUtc,
         int includedWaitingMinutes = DefaultIncludedWaitingMinutes,
-        int additionalWaitingFarePerMinuteCop = DefaultAdditionalWaitingFarePerMinuteCop) =>
+        int additionalWaitingFarePerMinuteCop = DefaultAdditionalWaitingFarePerMinuteCop,
+        int fairOfferMinimumPercent = DefaultFairOfferMinimumPercent,
+        int favorableOfferMinimumPercent = DefaultFavorableOfferMinimumPercent) =>
         Apply(
             CityCode,
             ServiceType,
@@ -70,7 +80,9 @@ public sealed class PricingRule
             isActive,
             updatedAtUtc,
             includedWaitingMinutes,
-            additionalWaitingFarePerMinuteCop);
+            additionalWaitingFarePerMinuteCop,
+            fairOfferMinimumPercent,
+            favorableOfferMinimumPercent);
 
     public int CalculateRecommendedFareCop(decimal estimatedDistanceKilometers, int estimatedDurationMinutes)
     {
@@ -100,7 +112,9 @@ public sealed class PricingRule
         bool isActive,
         DateTimeOffset updatedAtUtc,
         int includedWaitingMinutes,
-        int additionalWaitingFarePerMinuteCop)
+        int additionalWaitingFarePerMinuteCop,
+        int fairOfferMinimumPercent,
+        int favorableOfferMinimumPercent)
     {
         CityCode = NormalizeCityCode(cityCode);
         ServiceType = serviceType;
@@ -124,12 +138,24 @@ public sealed class PricingRule
             throw new DomainRuleViolationException("El valor por minuto adicional de espera no puede ser negativo.");
         }
 
+        if (fairOfferMinimumPercent is < 1 or > 1_000 || favorableOfferMinimumPercent is < 1 or > 1_000)
+        {
+            throw new DomainRuleViolationException("Los rangos de clasificación deben estar entre 1 y 1.000 por ciento.");
+        }
+
+        if (favorableOfferMinimumPercent < fairOfferMinimumPercent)
+        {
+            throw new DomainRuleViolationException("El rango favorable no puede ser menor que el rango justo.");
+        }
+
         MinimumFareCop = minimumFareCop;
         BaseFareCop = baseFareCop;
         FarePerKilometerCop = farePerKilometerCop;
         FarePerMinuteCop = farePerMinuteCop;
         IncludedWaitingMinutes = includedWaitingMinutes;
         AdditionalWaitingFarePerMinuteCop = additionalWaitingFarePerMinuteCop;
+        FairOfferMinimumPercent = fairOfferMinimumPercent;
+        FavorableOfferMinimumPercent = favorableOfferMinimumPercent;
         IsActive = isActive;
         UpdatedAtUtc = updatedAtUtc;
     }

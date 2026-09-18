@@ -512,16 +512,20 @@ function getDriverPriceReference(offer) {
   const minimumFare = Number(offer?.minimumFareCopAtRequest);
   if (Number.isFinite(directReference) && directReference > 0 && Number.isFinite(proposedPrice)) {
     const ratio = proposedPrice / directReference;
-    const signal = ratio >= 1.05
-      ? { label: "Sobre la referencia", tone: "above" }
-      : ratio >= 0.9
-        ? { label: "Cerca de la referencia", tone: "close" }
-        : ratio >= 0.75
-          ? { label: "Por debajo de la referencia", tone: "below" }
-          : { label: "Muy por debajo de la referencia", tone: "low" };
+    const fairMinimumPercent = Number(offer?.fairOfferMinimumPercent);
+    const favorableMinimumPercent = Number(offer?.favorableOfferMinimumPercent);
+    const fairThreshold = Number.isFinite(fairMinimumPercent) && fairMinimumPercent > 0 ? fairMinimumPercent / 100 : 0.9;
+    const favorableThreshold = Number.isFinite(favorableMinimumPercent) && favorableMinimumPercent > 0 ? favorableMinimumPercent / 100 : 1.05;
+    const signal = ratio >= favorableThreshold
+      ? { label: "Oferta favorable", tone: "above" }
+      : ratio >= fairThreshold
+        ? { label: "Oferta justa", tone: "close" }
+        : { label: "Oferta baja", tone: "below" };
     return {
       referenceFare: directReference,
       minimumFare: Number.isFinite(minimumFare) && minimumFare > 0 ? minimumFare : null,
+      fairMinimumPercent,
+      favorableMinimumPercent,
       ...signal
     };
   }
@@ -4776,7 +4780,10 @@ function renderPricingAdminPanel() {
           <div class="field"><label for="pricing-base-${rule.id}">Base COP</label><input id="pricing-base-${rule.id}" name="baseFareCop" type="number" min="0" value="${rule.baseFareCop}" required></div>
           <div class="field"><label for="pricing-kilometer-${rule.id}">COP por km</label><input id="pricing-kilometer-${rule.id}" name="farePerKilometerCop" type="number" min="0" value="${rule.farePerKilometerCop}" required></div>
           <div class="field"><label for="pricing-minute-${rule.id}">COP por minuto</label><input id="pricing-minute-${rule.id}" name="farePerMinuteCop" type="number" min="0" value="${rule.farePerMinuteCop}" required></div>
+          <div class="field"><label for="pricing-fair-${rule.id}">Oferta justa desde (%)</label><input id="pricing-fair-${rule.id}" name="fairOfferMinimumPercent" type="number" min="1" max="1000" value="${rule.fairOfferMinimumPercent ?? 90}" required></div>
+          <div class="field"><label for="pricing-favorable-${rule.id}">Oferta favorable desde (%)</label><input id="pricing-favorable-${rule.id}" name="favorableOfferMinimumPercent" type="number" min="1" max="1000" value="${rule.favorableOfferMinimumPercent ?? 105}" required></div>
         </div>
+        <p class="muted small-text">Los porcentajes comparan la oferta con la referencia directa A–B. Por debajo de “justa” se clasifica como oferta baja.</p>
         <label class="checkbox-field"><input name="isActive" type="checkbox" ${rule.isActive ? "checked" : ""}> Regla activa para solicitudes nuevas</label>
         <div class="button-row"><button class="button button-secondary" type="submit">Guardar tarifa</button></div>
       </form>`).join("")
@@ -4797,6 +4804,8 @@ function renderPricingAdminPanel() {
         <div class="field"><label for="pricing-base">Base COP</label><input id="pricing-base" name="baseFareCop" type="number" min="0" value="0" required></div>
         <div class="field"><label for="pricing-kilometer">COP por km</label><input id="pricing-kilometer" name="farePerKilometerCop" type="number" min="0" value="0" required></div>
         <div class="field"><label for="pricing-minute">COP por minuto</label><input id="pricing-minute" name="farePerMinuteCop" type="number" min="0" value="0" required></div>
+        <div class="field"><label for="pricing-fair">Oferta justa desde (%)</label><input id="pricing-fair" name="fairOfferMinimumPercent" type="number" min="1" max="1000" value="90" required></div>
+        <div class="field"><label for="pricing-favorable">Oferta favorable desde (%)</label><input id="pricing-favorable" name="favorableOfferMinimumPercent" type="number" min="1" max="1000" value="105" required></div>
         <label class="checkbox-field"><input name="isActive" type="checkbox" checked> Activar para solicitudes nuevas</label>
         <div class="button-row"><button class="button button-primary" type="submit">Crear regla</button></div>
       </form>
@@ -5465,6 +5474,8 @@ function readPricingRuleData(form) {
     baseFareCop: Number(data.baseFareCop),
     farePerKilometerCop: Number(data.farePerKilometerCop),
     farePerMinuteCop: Number(data.farePerMinuteCop),
+    fairOfferMinimumPercent: Number(data.fairOfferMinimumPercent),
+    favorableOfferMinimumPercent: Number(data.favorableOfferMinimumPercent),
     isActive: data.isActive === "on"
   };
 }

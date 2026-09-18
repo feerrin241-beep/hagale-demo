@@ -36,7 +36,9 @@ public sealed class PricingService(
                 command.IsActive,
                 timeProvider.GetUtcNow(),
                 command.IncludedWaitingMinutes,
-                command.AdditionalWaitingFarePerMinuteCop);
+                command.AdditionalWaitingFarePerMinuteCop,
+                command.FairOfferMinimumPercent,
+                command.FavorableOfferMinimumPercent);
             var existing = await pricingRuleRepository.GetByCityAndServiceAsync(pricingRule.CityCode, pricingRule.ServiceType, cancellationToken);
             if (existing is not null)
             {
@@ -75,7 +77,9 @@ public sealed class PricingService(
                 command.IsActive,
                 timeProvider.GetUtcNow(),
                 command.IncludedWaitingMinutes,
-                command.AdditionalWaitingFarePerMinuteCop);
+                command.AdditionalWaitingFarePerMinuteCop,
+                command.FairOfferMinimumPercent,
+                command.FavorableOfferMinimumPercent);
             await pricingRuleRepository.SaveChangesAsync(cancellationToken);
             return ApplicationResult<PricingRuleDto>.Success(Map(pricingRule));
         }
@@ -123,5 +127,7 @@ public sealed class PricingService(
         pricingRule.IncludedWaitingMinutes,
         pricingRule.AdditionalWaitingFarePerMinuteCop,
         pricingRule.IsActive,
-        pricingRule.UpdatedAtUtc);
+        pricingRule.UpdatedAtUtc,
+        pricingRule.FairOfferMinimumPercent,
+        pricingRule.FavorableOfferMinimumPercent);
 }
