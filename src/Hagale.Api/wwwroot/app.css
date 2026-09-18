@@ -7278,3 +7278,83 @@ body.visual-day .driver-shell { background: #fff; }
   .mode-switch-tab { gap: .34rem !important; padding-inline: .18rem !important; font-size: 1.02rem !important; letter-spacing: 0 !important; }
   .mode-switch-tab-icon { display: none !important; }
 }
+/* Bienvenida de cuenta HÁGALE: pantalla 9:16, amarilla, diagonal y tres segundos. */
+body.account-splash-active { overflow: hidden !important; }
+.account-entry-splash {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100svh;
+  overflow: hidden;
+  background: #ffd800;
+  opacity: 1;
+  transition: opacity .25s ease, transform .25s ease;
+}
+.account-entry-splash.is-leaving { opacity: 0; transform: scale(1.025); pointer-events: none; }
+.account-entry-splash-inner {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(100vw, 56.25svh);
+  min-width: 280px;
+  height: min(177.78vw, 100svh);
+  min-height: 498px;
+  max-height: 100svh;
+  overflow: hidden;
+  background: linear-gradient(155deg, #ffe96b 0%, #ffd800 52%, #f2bf00 100%);
+}
+.account-entry-splash-inner::before,
+.account-entry-splash-inner::after {
+  content: "";
+  position: absolute;
+  width: 125%;
+  height: 1px;
+  background: rgba(17, 18, 24, .2);
+  transform: rotate(-18deg);
+}
+.account-entry-splash-inner::before { top: 28%; left: -12%; box-shadow: 0 5.5rem 0 rgba(17,18,24,.12), 0 11rem 0 rgba(17,18,24,.08); }
+.account-entry-splash-inner::after { bottom: 25%; left: -12%; box-shadow: 0 -5rem 0 rgba(17,18,24,.1); }
+.account-entry-splash-logo {
+  position: absolute;
+  top: 16%;
+  width: 55%;
+  max-width: 14rem;
+  height: auto;
+  object-fit: contain;
+}
+.account-entry-splash-title {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: .1em;
+  margin: 0;
+  color: #111218;
+  font-size: clamp(2rem, 10vw, 4rem);
+  font-style: italic;
+  font-weight: 1000;
+  letter-spacing: -.055em;
+  line-height: .96;
+  text-align: center;
+  transform: rotate(-14deg) skewX(-5deg);
+}
+.account-entry-splash-title span:last-child { color: #fff; text-shadow: .08em .08em 0 #111218; }
+.account-entry-splash-arrow {
+  position: absolute;
+  right: 17%;
+  bottom: 20%;
+  color: #111218;
+  font-size: clamp(2.5rem, 14vw, 5rem);
+  font-weight: 1000;
+  transform: rotate(-14deg);
+}
+@media (min-width: 761px) {
+  .account-entry-splash { background: #111218; }
+  .account-entry-splash-inner { border-radius: 0; box-shadow: 0 0 0 1px #ffd800, 0 1rem 4rem rgba(0,0,0,.45); }
+}
+@media (max-width: 360px) {
+  .account-entry-splash-inner { min-width: 100vw; min-height: 100svh; width: 100vw; height: 100svh; }
+  .account-entry-splash-title { font-size: 2.05rem; }
+}

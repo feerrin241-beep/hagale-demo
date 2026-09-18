@@ -9,6 +9,7 @@ const driverSoundAlertsKey = "hagale.driver-sound-alerts";
 const driverVoiceAlertsKey = "hagale.driver-voice-alerts";
 const driverSystemAlertsKey = "hagale.driver-system-alerts";
 const visualModeKey = "hagale.visual-mode.v2";
+const accountSplashSessionKey = "hagale.account-splash-shown";
 const app = document.querySelector("#app");
 const notice = document.querySelector("#notice");
 
@@ -85,6 +86,7 @@ const state = {
   driverVoiceAlertsEnabled: localStorage.getItem(driverVoiceAlertsKey) === "true",
   driverSystemAlertsEnabled: localStorage.getItem(driverSystemAlertsKey) === "true",
   visualMode: localStorage.getItem(visualModeKey) || "night",
+  accountSplashPending: false,
   driverAudioContext: null,
   driverAlertsUnlocked: false,
   lastDriverOfferAlertAt: 0,
@@ -2976,6 +2978,10 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
     } else {
       state.adminApplications = null;
     }
+    if (!sessionStorage.getItem(accountSplashSessionKey)) {
+      state.accountSplashPending = true;
+      sessionStorage.setItem(accountSplashSessionKey, "true");
+    }
     renderDashboard();
   } catch (error) {
     showNotice(error.message, true);
@@ -3211,6 +3217,21 @@ function renderDashboard() {
         </main>
       </section>`;
 
+  if (state.accountSplashPending) {
+    state.accountSplashPending = false;
+    const splash = document.createElement("div");
+    splash.className = "account-entry-splash";
+    splash.setAttribute("role", "status");
+    splash.setAttribute("aria-label", "Tu moto, tu precio");
+    splash.innerHTML = `<div class="account-entry-splash-inner"><img src="/assets/hagale-logo-black.png" alt="HÁGALE" class="account-entry-splash-logo"><p class="account-entry-splash-title"><span>TU MOTO</span><span>TU PRECIO</span></p><span class="account-entry-splash-arrow" aria-hidden="true">➜</span></div>`;
+    app.prepend(splash);
+    document.body.classList.add("account-splash-active");
+    window.setTimeout(() => splash.classList.add("is-leaving"), 2750);
+    window.setTimeout(() => {
+      splash.remove();
+      document.body.classList.remove("account-splash-active");
+    }, 3000);
+  }
   app.querySelectorAll("[data-sign-out]").forEach(button => {
     button.addEventListener("click", () => signOut(true));
   });
@@ -5396,6 +5417,7 @@ function signOut(notify = true) {
   state.driverNav = "requests";
   state.hiddenDriverOfferIds.clear();
   sessionStorage.removeItem(sessionKey);
+  sessionStorage.removeItem(accountSplashSessionKey);
   sessionStorage.removeItem(modeKey);
   sessionStorage.removeItem(customerNavKey);
   sessionStorage.removeItem(customerRideStepKey);
