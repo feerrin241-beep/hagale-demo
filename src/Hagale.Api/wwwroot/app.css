@@ -6932,3 +6932,152 @@ body.welcome-view {
   .driver-accept-large,
   .driver-accept-large::after { animation: none; }
 }
+/* HÁGALE · capa visual final solicitada: fondo negro, selector único y acciones verdes. */
+:root { --action-green: #9be8b8; --action-green-strong: #73dca0; }
+body { background: #050506; color: #f5f5f0; }
+body.visual-night { background: #050506; color: #f5f5f0; }
+body.visual-day { background: #fff; color: #111218; }
+body.visual-night #app,
+body.visual-night .dashboard-shell,
+body.visual-night .customer-panel-shell,
+body.visual-night .driver-shell { background: #050506; }
+body.visual-day #app,
+body.visual-day .dashboard-shell,
+body.visual-day .customer-panel-shell,
+body.visual-day .driver-shell { background: #fff; }
+
+/* Un solo control superior para pasar de CLIENTE a CONDUCTOR. */
+.mode-switch-app {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: .7rem;
+  width: 100%;
+  margin: 0 0 .8rem;
+  padding: .45rem .55rem;
+  border: 2px solid var(--action-green-strong);
+  border-radius: 1.1rem;
+  color: #050506;
+  background: var(--action-green);
+  box-shadow: 0 .55rem 1.2rem rgba(0,0,0,.22);
+}
+.mode-switch-label {
+  min-width: 6.5rem;
+  padding: .25rem .2rem;
+  color: #050506;
+  font-size: .72rem;
+  font-weight: 1000;
+  letter-spacing: .08em;
+  text-align: center;
+}
+.mode-switch-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  min-height: 3.65rem;
+  padding: .25rem .35rem;
+  border: 2px solid #050506;
+  border-radius: 999px;
+  color: #fff;
+  background: #111218;
+  font-weight: 1000;
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.08);
+}
+.mode-switch-option { padding: .2rem .3rem; font-size: clamp(.72rem, 2.8vw, .95rem); letter-spacing: .04em; }
+.mode-switch-thumb {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 2px solid #050506;
+  border-radius: 50%;
+  color: #050506;
+  background: var(--action-green);
+  font-size: 1.35rem;
+  line-height: 1;
+  box-shadow: 0 3px 0 rgba(0,0,0,.3);
+}
+.mode-switch-app.is-customer .is-customer-option,
+.mode-switch-app.is-driver .is-driver-option { color: var(--action-green); }
+.mode-switch-app.is-driver { border-color: var(--action-green-strong); background: #111218; }
+.mode-switch-app.is-driver .mode-switch-label { color: var(--action-green); }
+.mode-switch-app.is-driver .mode-switch-thumb { color: #050506; background: var(--action-green); }
+
+/* Verde tenue para las acciones operativas, conservando el amarillo para logo y ruta B. */
+.dashboard-shell .button-primary,
+.dashboard-shell .customer-request-actions .button-primary,
+.dashboard-shell .location-button,
+.dashboard-shell .driver-online-button,
+.dashboard-shell .driver-active-actions .button,
+.dashboard-shell .driver-stage-action,
+.dashboard-shell .driver-accept-large {
+  border-color: #14251c;
+  color: #07130c;
+  background: var(--action-green);
+}
+.dashboard-shell .button-primary:hover,
+.dashboard-shell .customer-request-actions .button-primary:hover,
+.dashboard-shell .location-button:hover,
+.dashboard-shell .driver-online-button:hover,
+.dashboard-shell .driver-active-actions .button:hover,
+.dashboard-shell .driver-stage-action:hover,
+.dashboard-shell .driver-accept-large:hover { background: #b2f2c9; }
+.dashboard-shell .driver-command-actions .button-secondary {
+  border-color: #14251c;
+  color: #07130c;
+  background: var(--action-green);
+}
+.dashboard-shell .driver-command-actions .button-secondary:hover { background: #b2f2c9; }
+
+/* A es blanco con letra/logo negro; B es amarillo con letra/logo negro. */
+.route-letter.route-letter-a,
+.hagale-map-pin-pickup .hagale-map-pin-shape,
+.search-map-pin-a {
+  color: #050506 !important;
+  background: #fff !important;
+}
+.route-letter.route-letter-b,
+.hagale-map-pin-destination .hagale-map-pin-shape,
+.search-map-pin-b {
+  color: #050506 !important;
+  background: #ffd800 !important;
+}
+.route-stop-pickup span,
+.route-stop-pickup strong,
+.driver-sheet-route > div:first-child strong,
+.customer-tracking-route > div:first-child strong { color: #fff !important; }
+.route-stop-destination span,
+.route-stop-destination strong,
+.driver-sheet-route > div:last-child strong,
+.customer-tracking-route > div:last-child strong { color: #ffd800 !important; }
+
+/* Pantalla 9:16 sin márgenes laterales desperdiciados. */
+@media (max-width: 760px) {
+  .dashboard-shell,
+  .customer-panel-shell,
+  .driver-shell { width: 100%; max-width: none; min-height: 100svh; margin: 0; padding-left: 0; padding-right: 0; }
+  .customer-app-header { margin: 0; border-right: 0; border-left: 0; border-radius: 0; }
+  .customer-panel-shell > .mode-switch-app,
+  .driver-shell > .mode-switch-app { margin: 0; border-right: 0; border-left: 0; border-radius: 0; }
+  .customer-panel-nav { margin: 0; border-right: 0; border-left: 0; }
+  .customer-panel-stage { width: 100%; margin: 0; padding: 0; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card { width: 100%; min-height: calc(100svh - 9.7rem); margin: 0; border-right: 0; border-left: 0; border-radius: 0; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form { width: 100%; margin-left: 0; margin-right: 0; padding-left: .75rem; padding-right: .75rem; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field { width: 100%; }
+  .driver-app-layout { width: 100%; margin: 0; padding: 0; }
+  .driver-workspace { width: 100%; padding-left: 0; padding-right: 0; }
+  .driver-workspace > *, .driver-command-rail > * { width: 100%; border-right: 0; border-left: 0; border-radius: 0; }
+  .driver-mobile-header { border-radius: 0; }
+  .mode-switch-label { min-width: 5.8rem; }
+  .mode-switch-button { min-height: 3.35rem; }
+  .mode-switch-thumb { width: 2.45rem; height: 2.45rem; }
+  .customer-request-actions .button-primary,
+  .driver-active-actions .button,
+  .driver-stage-action,
+  .driver-accept-large { min-height: 4rem; font-size: 1.18rem; }
+}
+@media (max-width: 760px) {
+  .driver-command-actions { display: grid; grid-template-columns: 1fr; gap: .55rem; }
+  .driver-command-actions .button { width: 100%; min-height: 3.85rem; font-size: 1.1rem; font-weight: 1000; }
+}

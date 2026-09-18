@@ -8,7 +8,7 @@ const dispatchRadiusKey = "hagale.dispatch-radius-km";
 const driverSoundAlertsKey = "hagale.driver-sound-alerts";
 const driverVoiceAlertsKey = "hagale.driver-voice-alerts";
 const driverSystemAlertsKey = "hagale.driver-system-alerts";
-const visualModeKey = "hagale.visual-mode";
+const visualModeKey = "hagale.visual-mode.v2";
 const app = document.querySelector("#app");
 const notice = document.querySelector("#notice");
 
@@ -84,7 +84,7 @@ const state = {
   driverSoundAlertsEnabled: localStorage.getItem(driverSoundAlertsKey) === "true",
   driverVoiceAlertsEnabled: localStorage.getItem(driverVoiceAlertsKey) === "true",
   driverSystemAlertsEnabled: localStorage.getItem(driverSystemAlertsKey) === "true",
-  visualMode: localStorage.getItem(visualModeKey) || "day",
+  visualMode: localStorage.getItem(visualModeKey) || "night",
   driverAudioContext: null,
   driverAlertsUnlocked: false,
   lastDriverOfferAlertAt: 0,
@@ -3036,7 +3036,7 @@ function renderCustomerAppHeader(profile, hasDriverRole, isAdministrator) {
       <a class="customer-mobile-brand" href="/" aria-label="HÁGALE, inicio"><img class="hagale-logo-image customer-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"></a>
       <div class="customer-app-actions">
         ${renderInstallAppButton("customer-install-button")}
-        ${hasDriverRole ? '<button class="button customer-mode-entry" type="button" data-set-mode="Driver"><span>Modo</span><strong>Conductor</strong></button>' : ""}
+
         ${isAdministrator ? '<button class="button button-secondary small customer-admin-entry" type="button" data-open-admin>Administrador</button>' : ""}
         <button class="button button-secondary small" type="button" data-customer-nav="profile">Mi cuenta</button>
         <button class="button button-quiet small" type="button" data-sign-out>Salir</button>
@@ -3057,12 +3057,9 @@ function renderCustomerPanelNav(items, activePanel) {
 function renderModeSwitchControl(isDriverMode, compact = false) {
   return `
     <div class="mode-switch-app ${isDriverMode ? "is-driver" : "is-customer"} ${compact ? "is-compact" : ""}" aria-label="Cambio de modo">
-      <div>
-        <span>Modo actual</span>
-        <strong>${isDriverMode ? "CONDUCTOR" : "CLIENTE"}</strong>
-      </div>
-      <button class="button mode-switch-button" type="button" data-set-mode="${isDriverMode ? "Customer" : "Driver"}">
-        ${isDriverMode ? "Cambiar a Cliente" : "Cambiar a Conductor"}
+      <span class="mode-switch-label">${isDriverMode ? "CONDUCTOR" : "CLIENTE"}</span>
+      <button class="mode-switch-button" type="button" data-set-mode="${isDriverMode ? "Customer" : "Driver"}" aria-label="Cambiar a modo ${isDriverMode ? "cliente" : "conductor"}">
+        <span class="mode-switch-option is-customer-option">CLIENTE</span><span class="mode-switch-thumb" aria-hidden="true">↔</span><span class="mode-switch-option is-driver-option">CONDUCTOR</span>
       </button>
     </div>`;
 }
@@ -3182,7 +3179,6 @@ function renderDashboard() {
       <p class="small-text">${escapeHtml(profile.email)}</p>
       <div class="role-list">${profile.roles.map(statusBadge).join("")}</div>
       ${approvedWithoutRole ? '<div class="role-refresh"><strong>Solicitud aprobada</strong><span class="small-text">Renueva tu sesión para activar el Modo conductor.</span><button class="button button-primary small" type="button" data-refresh-driver-role>Activar acceso conductor</button></div>' : ""}
-      ${modeSwitch}
       ${isAdministrator ? '<button class="button button-primary admin-quick-access" type="button" data-open-admin>Ir al Centro de administración</button>' : ""}
       <button class="button button-secondary" type="button" data-sign-out>Cerrar sesión</button>
     </article>`;
@@ -3197,9 +3193,10 @@ function renderDashboard() {
     ? `
       <section class="shell dashboard-shell driver-shell ${hasActiveJourney ? "has-active-journey" : ""} driver-nav-${escapeHtml(state.driverNav || "requests")}">
         ${renderDriverMobileHeader(profile, driver)}
+        ${modeSwitch}
         <div class="driver-app-layout">
           <aside class="driver-command-rail">
-            ${renderDriverCommandRail(profile, driver, modeSwitch)}
+            ${renderDriverCommandRail(profile, driver, "")}
           </aside>
           <main class="driver-workspace stack">
             ${modeHero}
@@ -3211,6 +3208,7 @@ function renderDashboard() {
     : `
       <section class="shell dashboard-shell customer-shell customer-panel-shell">
         ${renderCustomerAppHeader(profile, hasDriverRole, isAdministrator)}
+        ${modeSwitch}
         ${modeHero}
         ${renderCustomerPanelNav(customerPanelItems, activeCustomerPanel)}
         <main class="customer-panel-stage stack" data-active-customer-panel="${escapeHtml(activeCustomerPanel)}">
