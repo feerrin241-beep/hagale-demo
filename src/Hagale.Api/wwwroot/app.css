@@ -7081,3 +7081,121 @@ body.visual-day .driver-shell { background: #fff; }
   .driver-command-actions { display: grid; grid-template-columns: 1fr; gap: .55rem; }
   .driver-command-actions .button { width: 100%; min-height: 3.85rem; font-size: 1.1rem; font-weight: 1000; }
 }
+/* Selector Cliente/Conductor y barra superior — ajuste solicitado 2026-09-17 */
+.dashboard-shell { width: 100%; max-width: 100%; margin-inline: auto; overflow-x: hidden; }
+.customer-app-header {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: .55rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: .65rem !important;
+  box-sizing: border-box;
+}
+.customer-app-header .customer-mobile-brand {
+  display: flex !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+.customer-app-actions {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: .42rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+.customer-app-actions:not(:has(.customer-admin-entry)) { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.customer-app-actions .button {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 2.9rem !important;
+  padding: .45rem .35rem !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  justify-content: center;
+  font-size: clamp(.67rem, 2.35vw, .86rem) !important;
+  font-weight: 950 !important;
+}
+.customer-app-actions .install-app-button { color: #fff !important; background: #292b34 !important; border-color: #ffd800 !important; }
+.customer-app-actions .customer-admin-entry { color: #15161b !important; background: #ffd800 !important; border-color: #ffd800 !important; }
+.customer-app-actions [data-customer-nav="profile"] { color: #fff !important; background: #353842 !important; border-color: #8a8d9a !important; }
+.customer-app-actions [data-sign-out] { color: #4b1010 !important; background: #ffadad !important; border-color: #ffd0d0 !important; box-shadow: 0 .2rem .45rem rgba(255, 117, 117, .18); }
+.customer-app-actions .button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+/* Dos botones grandes amarillos: el activo crece y se distingue; nunca se pinta de verde. */
+.mode-switch-app {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: .5rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: .45rem !important;
+  box-sizing: border-box;
+  border: 1px solid #444650 !important;
+  border-radius: 1rem !important;
+  background: #101116 !important;
+  overflow: visible !important;
+}
+.mode-switch-tab {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: .42rem !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 4.15rem !important;
+  padding: .65rem .45rem !important;
+  border: 2px solid #ffd800 !important;
+  border-radius: .9rem !important;
+  color: #ffd800 !important;
+  background: #25262d !important;
+  font-size: clamp(.95rem, 3.8vw, 1.35rem) !important;
+  font-weight: 1000 !important;
+  letter-spacing: .04em !important;
+  transition: transform .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease;
+}
+.mode-switch-tab:hover { background: #3a3b44 !important; transform: translateY(-1px); }
+.mode-switch-tab-icon { font-size: .78rem !important; line-height: 1 !important; }
+.mode-switch-app.is-customer .is-customer-tab,
+.mode-switch-app.is-driver .is-driver-tab {
+  color: #111218 !important;
+  background: #ffd800 !important;
+  box-shadow: 0 .35rem 0 #a98300, 0 .55rem 1.2rem rgba(255, 216, 0, .22) !important;
+  transform: scale(1.035) !important;
+  position: relative;
+  z-index: 2;
+}
+.mode-switch-app.is-customer .is-customer-tab:hover,
+.mode-switch-app.is-driver .is-driver-tab:hover { background: #ffe96b !important; }
+.mode-switch-app.is-compact { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; padding: .35rem !important; }
+.mode-switch-app.is-compact .mode-switch-tab { min-height: 3.35rem !important; }
+.mode-switch-label, .mode-switch-button, .mode-switch-option, .mode-switch-thumb { display: none !important; }
+
+/* El selector superior es la única entrada de modo; se eliminan accesos repetidos. */
+.customer-panel-nav [data-customer-nav="ride"],
+.customer-panel-nav [data-customer-nav="tracking"],
+.customer-panel-nav .customer-panel-switch,
+.driver-bottom-nav .driver-mode-return,
+.driver-hero-return,
+.driver-rail-actions .mode-switch-app { display: none !important; }
+.customer-panel-nav { width: 100% !important; max-width: 100% !important; overflow-x: hidden !important; }
+.customer-panel-tab { min-width: 0 !important; }
+
+@media (max-width: 760px) {
+  .customer-app-actions { gap: .3rem !important; }
+  .customer-app-actions .button { min-height: 3rem !important; font-size: clamp(.63rem, 2.65vw, .78rem) !important; }
+  .mode-switch-app { border-radius: 0 !important; padding: .42rem .5rem !important; }
+  .mode-switch-tab { min-height: 4.25rem !important; font-size: clamp(.9rem, 4.5vw, 1.18rem) !important; }
+  .customer-panel-shell > .mode-switch-app,
+  .driver-shell > .mode-switch-app { width: 100% !important; margin-inline: 0 !important; }
+  .customer-panel-stage, .customer-panel-stage > *, .customer-ride-form, .customer-request-card { width: 100% !important; max-width: 100% !important; box-sizing: border-box; }
+  .customer-panel-stage { min-width: 0 !important; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card { margin-inline: 0 !important; border-radius: 0 !important; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form { padding-inline: .6rem !important; }
+  .driver-shell .driver-app-layout, .driver-shell .driver-workspace { width: 100% !important; max-width: 100% !important; min-width: 0 !important; }
+}

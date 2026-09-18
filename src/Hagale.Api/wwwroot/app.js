@@ -2992,13 +2992,8 @@ async function loadAdminApplications(status = state.adminStatus) {
 function getCustomerPanelItems({ profile, driver, isAdministrator, hasDriverRole, hasActiveCustomerRide }) {
   const historyCount = (state.rideRequests || []).length;
   const items = [
-    { id: "ride", label: "Pedir moto", meta: "Cliente" },
     { id: "history", label: "Historial", meta: historyCount ? `${historyCount} registros` : "Viajes" }
   ];
-
-  if (hasActiveCustomerRide) {
-    items.unshift({ id: "tracking", label: "Seguimiento", meta: "Viaje" });
-  }
 
   if (!hasDriverRole) {
     items.push({
@@ -3006,8 +3001,6 @@ function getCustomerPanelItems({ profile, driver, isAdministrator, hasDriverRole
       label: driver ? "Mi solicitud" : "Ser conductor",
       meta: "Conductor"
     });
-  } else {
-    items.push({ id: "driver-mode", label: "Modo conductor", meta: "Cambiar", mode: "Driver" });
   }
 
   items.push(
@@ -3017,19 +3010,20 @@ function getCustomerPanelItems({ profile, driver, isAdministrator, hasDriverRole
 
   return items;
 }
-
 function resolveCustomerPanel(items, hasActiveCustomerRide) {
   const availablePanels = items.filter(item => !item.mode).map(item => item.id);
   if (availablePanels.includes(state.customerNav)) return state.customerNav;
 
-  const fallback = hasActiveCustomerRide && availablePanels.includes("tracking")
-    ? "tracking"
-    : "ride";
+  const fallback = hasActiveCustomerRide ? "tracking" : "ride";
+  if (fallback === "ride" || fallback === "tracking") {
+    state.customerNav = fallback;
+    sessionStorage.setItem(customerNavKey, state.customerNav);
+    return fallback;
+  }
   state.customerNav = availablePanels.includes(fallback) ? fallback : availablePanels[0];
   sessionStorage.setItem(customerNavKey, state.customerNav);
   return state.customerNav;
 }
-
 function renderCustomerAppHeader(profile, hasDriverRole, isAdministrator) {
   return `
     <header class="customer-app-header" data-reveal>
@@ -3056,14 +3050,15 @@ function renderCustomerPanelNav(items, activePanel) {
 
 function renderModeSwitchControl(isDriverMode, compact = false) {
   return `
-    <div class="mode-switch-app ${isDriverMode ? "is-driver" : "is-customer"} ${compact ? "is-compact" : ""}" aria-label="Cambio de modo">
-      <span class="mode-switch-label">${isDriverMode ? "CONDUCTOR" : "CLIENTE"}</span>
-      <button class="mode-switch-button" type="button" data-set-mode="${isDriverMode ? "Customer" : "Driver"}" aria-label="Cambiar a modo ${isDriverMode ? "cliente" : "conductor"}">
-        <span class="mode-switch-option is-customer-option">CLIENTE</span><span class="mode-switch-thumb" aria-hidden="true">↔</span><span class="mode-switch-option is-driver-option">CONDUCTOR</span>
+    <div class="mode-switch-app ${isDriverMode ? "is-driver" : "is-customer"} ${compact ? "is-compact" : ""}" aria-label="Seleccionar panel">
+      <button class="mode-switch-tab is-customer-tab" type="button" data-set-mode="Customer" aria-pressed="${!isDriverMode}">
+        <span class="mode-switch-tab-icon" aria-hidden="true">●</span><span>CLIENTE</span>
+      </button>
+      <button class="mode-switch-tab is-driver-tab" type="button" data-set-mode="Driver" aria-pressed="${isDriverMode}">
+        <span class="mode-switch-tab-icon" aria-hidden="true">●</span><span>CONDUCTOR</span>
       </button>
     </div>`;
 }
-
 function renderCustomerPanelContent(panel, profile, driver, accountSummary, isAdministrator) {
   if (panel === "tracking") {
     return renderCustomerRideTrackingPanel() || renderRideRequestPanel();
@@ -3180,7 +3175,7 @@ function renderDashboard() {
       <div class="role-list">${profile.roles.map(statusBadge).join("")}</div>
       ${approvedWithoutRole ? '<div class="role-refresh"><strong>Solicitud aprobada</strong><span class="small-text">Renueva tu sesión para activar el Modo conductor.</span><button class="button button-primary small" type="button" data-refresh-driver-role>Activar acceso conductor</button></div>' : ""}
       ${isAdministrator ? '<button class="button button-primary admin-quick-access" type="button" data-open-admin>Ir al Centro de administración</button>' : ""}
-      <button class="button button-secondary" type="button" data-sign-out>Cerrar sesión</button>
+      <button class="button button-secondary" type="button" data-sign-out>Salir</button>
     </article>`;
   const customerPanelItems = isDriverMode
     ? []
@@ -3360,7 +3355,7 @@ function renderDriverCommandRail(profile, driver, modeSwitch) {
     </article>
     <div class="driver-rail-actions">
       ${modeSwitch ? renderModeSwitchControl(true, true) : ""}
-      <button class="button button-secondary" type="button" data-sign-out>Cerrar sesión</button>
+      <button class="button button-secondary" type="button" data-sign-out>Salir</button>
     </div>
     <details class="driver-account-details">
       <summary>Mi cuenta y perfil</summary>
