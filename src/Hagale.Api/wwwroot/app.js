@@ -90,6 +90,10 @@ const state = {
   driverAudioContext: null,
   driverAlertsUnlocked: false,
   lastDriverOfferAlertAt: 0,
+  driverVoiceRecognition: null,
+  driverVoiceRecognitionTimer: null,
+  driverVoiceRecognitionOfferId: null,
+  driverVoiceRecognitionToken: 0,
   pwaInstallPrompt: null,
   canInstallPwa: false,
   googleAuthStatus: null,
@@ -442,6 +446,39 @@ function normalizeAddressForVoice(address) {
     .trim();
 }
 
+function splitAddressNeighborhood(address) {
+  const value = String(address || "").replace(/\s+/g, " ").trim();
+  const match = value.match(/^(.+?)\s*·\s*Barrio:\s*(.+)$/i);
+  return match
+    ? { address: match[1].trim(), neighborhood: match[2].trim() }
+    : { address: value, neighborhood: "" };
+}
+
+function formatDriverOfferAddress(address) {
+  const parts = splitAddressNeighborhood(address);
+  const neighborhood = parts.neighborhood
+    ? "Barrio " + escapeHtml(parts.neighborhood) + " · "
+    : "";
+  return neighborhood + escapeHtml(parts.address);
+}
+
+function formatDistanceForVoice(value) {
+  const distance = Number(value);
+  if (!Number.isFinite(distance) || distance < 0) return "distancia pendiente";
+  return String(new Intl.NumberFormat("es-CO", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(distance)) + " kilómetros";
+}
+
+function getOfferEstimatedMinutes(offer) {
+  const explicit = Number(offer?.estimatedDurationMinutes ?? offer?.tripDurationMinutes);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.round(explicit);
+  return null;
+}
+
+function formatDriverOfferDuration(offer) {
+  const minutes = getOfferEstimatedMinutes(offer);
+  return minutes ? `${minutes} min` : "GPS pendiente";
+}
+
 function formatDateTime(value) {
   return value
     ? new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
@@ -608,9 +645,84 @@ function speakDriverAlert(message, force = false) {
     utterance.pitch = 1;
     utterance.volume = 1;
     window.speechSynthesis.speak(utterance);
+    return utterance;
   } catch {
     // La voz es una mejora progresiva; si el navegador la bloquea, queda el
     // sonido y el aviso visual en pantalla.
+  }
+}
+
+function stopDriverVoiceAcceptance() {
+  window.clearTimeout(state.driverVoiceRecognitionTimer);
+  state.driverVoiceRecognitionTimer = null;
+  state.driverVoiceRecognitionOfferId = null;
+  const recognition = state.driverVoiceRecognition;
+  state.driverVoiceRecognition = null;
+  state.driverVoiceRecognitionToken += 1;
+  if (recognition) {
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    try { recognition.stop(); } catch { /* ya estaba detenido */ }
+  }
+}
+
+function normalizeVoiceCommand(value) {
+  return String(value || "")
+    .toLocaleLowerCase("es-CO")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isDriverAcceptanceCommand(value) {
+  return /\bacepto\s+(el|este)\s+servicio\b/.test(normalizeVoiceCommand(value));
+}
+
+function startDriverVoiceAcceptance(offer) {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!offer || !Recognition || !state.driverVoiceAlertsEnabled || !state.driverAlertsUnlocked) return;
+  stopDriverVoiceAcceptance();
+  const token = state.driverVoiceRecognitionToken;
+  const recognition = new Recognition();
+  state.driverVoiceRecognition = recognition;
+  state.driverVoiceRecognitionOfferId = offer.id;
+  recognition.lang = "es-CO";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 3;
+  recognition.onresult = event => {
+    const alternatives = [...(event.results?.[0] || [])].map(result => result.transcript);
+    const accepted = alternatives.some(isDriverAcceptanceCommand);
+    stopDriverVoiceAcceptance();
+    if (accepted) {
+      void acceptRideRequest(offer.id, "voice");
+    } else {
+      showNotice("No se reconoció la orden. Di: ACEPTO EL SERVICIO.", true);
+    }
+  };
+  recognition.onerror = event => {
+    if (event.error !== "aborted" && event.error !== "no-speech") {
+      showNotice("No se pudo escuchar la orden de aceptación. Usa el botón si lo prefieres.", true);
+    }
+    stopDriverVoiceAcceptance();
+  };
+  recognition.onend = () => {
+    if (state.driverVoiceRecognition === recognition && state.driverVoiceRecognitionToken === token) {
+      stopDriverVoiceAcceptance();
+    }
+  };
+  try {
+    recognition.start();
+    state.driverVoiceRecognitionTimer = window.setTimeout(() => {
+      stopDriverVoiceAcceptance();
+      showNotice("La ventana de voz terminó. El servicio sigue disponible para otros conductores.");
+    }, 8_000);
+    showNotice("Di: ACEPTO EL SERVICIO. Escuchando durante 8 segundos.", false, true);
+  } catch {
+    stopDriverVoiceAcceptance();
   }
 }
 
@@ -620,7 +732,7 @@ function announceRideNotification(message, { alert = true, forceVoice = false, f
     navigator.vibrate([160, 80, 160, 80, 220]);
   }
   void playDriverOfferTone(forceSound, 2);
-  speakDriverAlert(message, forceVoice);
+  return speakDriverAlert(message, forceVoice);
 }
 
 function summarizeAddressForVoice(address) {
@@ -664,10 +776,16 @@ function repeatDriverRoute(rideRequestId) {
 
 function buildDriverOfferVoiceMessage(offer) {
   if (!offer) return "Tienes un nuevo servicio cerca.";
-  const destination = summarizeAddressForVoice(offer.destinationAddress);
-  const pickup = summarizeAddressForVoice(offer.pickupAddress);
-  const pickupDistance = formatPickupProximity(offer.pickupDistanceKilometers);
-  return `Nuevo servicio hacia ${destination}, por ${formatCopForVoice(offer.proposedPriceCop)}. Recogida en ${pickup}, ${pickupDistance}.`;
+  const pickup = splitAddressNeighborhood(offer.pickupAddress);
+  const destination = splitAddressNeighborhood(offer.destinationAddress);
+  const pickupNeighborhood = pickup.neighborhood ? "barrio " + summarizeAddressForVoice(pickup.neighborhood) + ", " : "";
+  const destinationNeighborhood = destination.neighborhood ? "barrio " + summarizeAddressForVoice(destination.neighborhood) + ", " : "";
+  const totalDistance = offer.totalDistanceKilometers ?? offer.tripDistanceKilometers;
+  const minutes = getOfferEstimatedMinutes(offer);
+  const classification = getDriverOfferClassification(offer);
+  const distanceLine = formatDistanceForVoice(totalDistance);
+  const timeLine = minutes ? numberToSpanishForVoice(minutes) + " minutos" : "tiempo pendiente";
+  return "Nuevo servicio Hágale. Recoger en " + pickupNeighborhood + summarizeAddressForVoice(pickup.address) + ". Entregar en " + destinationNeighborhood + summarizeAddressForVoice(destination.address) + ". Distancia aproximada " + distanceLine + ". Tiempo estimado " + timeLine + ". Valor ofrecido " + formatCopForVoice(offer.proposedPriceCop) + ". " + classification.label + ". Diga: ACEPTO EL SERVICIO.";
 }
 
 function notifyDriverNewOffers(newOffers) {
@@ -680,8 +798,22 @@ function notifyDriverNewOffers(newOffers) {
   if (now - state.lastDriverOfferAlertAt < 3_500) return;
   state.lastDriverOfferAlertAt = now;
 
-  announceRideNotification(message);
+  const utterance = announceRideNotification(message);
   void showDriverSystemNotification(offers);
+  if (offers.length === 1) {
+    let started = false;
+    const startRecognition = () => {
+      if (started) return;
+      started = true;
+      startDriverVoiceAcceptance(offers[0]);
+    };
+    if (utterance) {
+      utterance.onend = startRecognition;
+      window.setTimeout(startRecognition, 12_000);
+    } else {
+      window.setTimeout(startRecognition, 900);
+    }
+  }
 }
 
 async function requestDriverSystemNotificationPermission() {
@@ -3016,6 +3148,14 @@ function getCustomerPanelItems({ profile, driver, isAdministrator, hasDriverRole
 
   return items;
 }
+
+function getDriverOfferClassification(offer) {
+  const reference = getDriverPriceReference(offer);
+  if (reference.tone === "above") return { label: "Oferta favorable", tone: "favorable" };
+  if (reference.tone === "close") return { label: "Oferta justa", tone: "fair" };
+  if (reference.tone === "below" || reference.tone === "low") return { label: "Oferta baja", tone: "low" };
+  return { label: "Oferta pendiente", tone: "pending" };
+}
 function resolveCustomerPanel(items, hasActiveCustomerRide) {
   const availablePanels = items.filter(item => !item.mode).map(item => item.id);
   if (availablePanels.includes(state.customerNav)) return state.customerNav;
@@ -3672,6 +3812,7 @@ function renderDriverRideRequestsPanel() {
 }
 
 function renderDriverOfferSheet(offer) {
+  const classification = getDriverOfferClassification(offer);
   return `
     <section class="driver-request-sheet" aria-label="Detalle de la solicitud seleccionada">
       <div class="driver-sheet-heading"><div><span class="eyebrow">Solicitud seleccionada</span><h3><span>Gana</span><strong>${formatCop(offer.proposedPriceCop)}</strong></h3><p>${formatPickupProximity(offer.pickupDistanceKilometers)} · ${escapeHtml(getRidePaymentMethodLabel(offer))}</p></div><button class="button button-quiet" type="button" data-close-driver-offer>Cerrar</button></div>
@@ -3679,7 +3820,13 @@ function renderDriverOfferSheet(offer) {
         <div><span>Hasta A</span><strong>${formatPickupProximity(offer.pickupDistanceKilometers)}</strong></div>
         <div><span>Trayecto A-B</span><strong>${formatDistance(offer.tripDistanceKilometers)}</strong></div>
         <div><span>Total directo</span><strong>${formatDistance(offer.totalDistanceKilometers)}</strong></div>
+        <div><span>Tiempo estimado</span><strong>${formatDriverOfferDuration(offer)}</strong></div>
       </div>
+      <div class="driver-offer-route-summary" aria-label="Direcciones completas">
+        <div><span class="driver-offer-route-label is-pickup">A · Recogida</span><strong>${formatDriverOfferAddress(offer.pickupAddress)}</strong></div>
+        <div><span class="driver-offer-route-label is-destination">B · Entrega</span><strong>${formatDriverOfferAddress(offer.destinationAddress)}</strong></div>
+      </div>
+      <div class="driver-offer-classification is-${classification.tone}" aria-label="Clasificación de la oferta">${classification.label}</div>
       ${renderDriverPriceReference(offer)}
       ${renderRidePreferenceTags(offer)}
       <p class="driver-sheet-note">Revisa la tarifa y responde debajo. Al aceptar, esta solicitud pasa al servicio activo y aparecerán el mapa y las direcciones completas de recogida y destino.</p>
@@ -5164,7 +5311,8 @@ async function cancelRideRequest(rideRequestId) {
   } catch (error) { showNotice(error.message, true); }
 }
 
-async function acceptRideRequest(rideRequestId) {
+async function acceptRideRequest(rideRequestId, source = "button") {
+  stopDriverVoiceAcceptance();
   try {
     state.driverCurrentRideRequest = await request(`/driver/ride-requests/${rideRequestId}/accept`, {
       method: "POST",
@@ -5176,7 +5324,9 @@ async function acceptRideRequest(rideRequestId) {
     state.application = await request("/driver-application/me");
     renderDashboard();
     speakDriverAlert(buildDriverRouteVoiceMessage(state.driverCurrentRideRequest), true);
-    showNotice("Solicitud aceptada. Pasaste al panel de servicio activo.");
+    showNotice(source === "voice"
+      ? "Servicio aceptado por voz. Pasaste al panel de servicio activo."
+      : "Solicitud aceptada. Pasaste al panel de servicio activo.");
   } catch (error) { showNotice(error.message, true); }
 }
 
@@ -5231,6 +5381,7 @@ async function updateRideJourney(action, rideRequestId) {
   if (!path) return;
 
   try {
+    if (action === "complete") stopDriverVoiceAcceptance();
     await request(`/driver/ride-requests/${rideRequestId}/${path}`, {
       method: "POST",
       data: {}
@@ -5247,6 +5398,7 @@ async function changeAvailability(availabilityStatus) {
     if (availabilityStatus === "Available") {
       await refreshDriverDispatch();
     } else {
+      stopDriverVoiceAcceptance();
       stopDriverLocationTracking();
       state.driverRideOffers = [];
       state.driverCurrentRideRequest = null;
@@ -5376,6 +5528,7 @@ async function createEmergencyServiceChannel(event) {
 
 function signOut(notify = true) {
   if (notify && !window.confirm("¿Estás seguro de que quieres salir?")) return;
+  stopDriverVoiceAcceptance();
   stopDriverLocationTracking();
   destroyDriverMap();
   destroyCustomerTrackingMap();

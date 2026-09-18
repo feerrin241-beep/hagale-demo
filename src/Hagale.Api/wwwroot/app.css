@@ -7398,3 +7398,31 @@ body.account-splash-active { overflow: hidden !important; }
   .account-entry-splash-inner { min-width: 100vw; min-height: 100svh; width: 100vw; height: 100svh; }
   .account-entry-splash-title { font-size: 2.05rem; }
 }
+
+/* Detalle compacto de la oferta: barrios y direcciones se distinguen sin tocar el mapa. */
+.driver-offer-route-summary {
+  display: grid;
+  gap: .5rem;
+  padding: .7rem;
+  border: 1px solid #e0dfd7;
+  border-radius: .7rem;
+  background: #fafaf6;
+}
+.driver-offer-route-summary > div { display: grid; gap: .15rem; }
+.driver-offer-route-label { font-size: .72rem; font-weight: 1000; letter-spacing: .04em; }
+.driver-offer-route-label.is-pickup { color: #111218; }
+.driver-offer-route-label.is-destination { color: #806600; }
+.driver-offer-route-summary strong { color: #111218; font-size: .95rem; line-height: 1.3; overflow-wrap: anywhere; }
+.driver-offer-classification {
+  padding: .65rem .8rem;
+  border: 2px solid;
+  border-radius: .7rem;
+  font-weight: 1000;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.driver-offer-classification.is-low { color: #7f1111; border-color: #e07a7a; background: #ffe0dd; }
+.driver-offer-classification.is-fair { color: #714710; border-color: #efc767; background: #fff0b5; }
+.driver-offer-classification.is-favorable { color: #075d39; border-color: #72c997; background: #ccefdc; }
+.driver-offer-classification.is-pending { color: #50545c; border-color: #c9cacf; background: #e8e9eb; }
