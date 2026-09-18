@@ -7199,3 +7199,82 @@ body.visual-day .driver-shell { background: #fff; }
   .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form { padding-inline: .6rem !important; }
   .driver-shell .driver-app-layout, .driver-shell .driver-workspace { width: 100% !important; max-width: 100% !important; min-width: 0 !important; }
 }
+/* Solicitudes: acciones bajo la tarjeta y contención horizontal en móvil. */
+.driver-request-inbox,
+.driver-request-list,
+.driver-request-row,
+.driver-request-sheet,
+.driver-active-card,
+.driver-map-card,
+.driver-map-frame,
+.driver-map-canvas {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.driver-request-inbox,
+.driver-request-list,
+.driver-request-row,
+.driver-request-sheet,
+.driver-active-card { overflow: hidden; }
+.driver-request-row { margin-inline: auto; }
+.driver-request-main { min-width: 0; overflow-wrap: anywhere; }
+.driver-request-main h3,
+.driver-request-main p,
+.driver-sheet-note { overflow-wrap: anywhere; word-break: break-word; }
+.driver-offer-action-stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .7rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: .1rem auto 0;
+}
+.driver-offer-action-stack .driver-accept-large,
+.driver-offer-action-stack .driver-counter-sheet { width: 100%; max-width: 100%; min-width: 0; }
+.driver-counter-sheet > div { width: 100%; min-width: 0; box-sizing: border-box; }
+.driver-counter-sheet input,
+.driver-counter-sheet button { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.driver-map-card { overflow: hidden; }
+.driver-map-frame, .driver-map-canvas { overflow: hidden; }
+@media (max-width: 760px) {
+  .driver-request-inbox,
+  .driver-request-sheet,
+  .driver-active-card,
+  .driver-map-card { margin-inline: 0 !important; border-radius: 0 !important; }
+  .driver-request-sheet { margin-left: 0 !important; margin-right: 0 !important; padding-inline: .72rem !important; }
+  .driver-request-row { padding-inline: .72rem !important; }
+  .driver-offer-action-stack { gap: .62rem; }
+  .driver-offer-action-stack .driver-accept-large { min-height: 4.45rem !important; font-size: 1.15rem !important; }
+  .driver-counter-sheet > div { grid-template-columns: minmax(0, 1fr) !important; }
+  .driver-counter-sheet button { width: 100%; min-height: 3.4rem; }
+}
+/* Texto principal del selector: grande y legible sin desbordar en 9:16. */
+.mode-switch-tab {
+  gap: .5rem !important;
+  padding-inline: .3rem !important;
+  font-size: clamp(1.1rem, 5vw, 1.5rem) !important;
+  line-height: 1 !important;
+  letter-spacing: .025em !important;
+  text-shadow: none;
+}
+.mode-switch-tab span:last-child {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-weight: 1000;
+}
+.mode-switch-tab-icon { flex: 0 0 auto; font-size: .7rem !important; }
+.mode-switch-app.is-customer .is-customer-tab,
+.mode-switch-app.is-driver .is-driver-tab {
+  transform: scale(1.02) !important;
+}
+@media (max-width: 360px) {
+  .mode-switch-app { gap: .35rem !important; padding-inline: .35rem !important; }
+  .mode-switch-tab { gap: .34rem !important; padding-inline: .18rem !important; font-size: 1.02rem !important; letter-spacing: 0 !important; }
+  .mode-switch-tab-icon { display: none !important; }
+}

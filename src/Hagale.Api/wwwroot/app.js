@@ -3654,9 +3654,6 @@ function renderDriverOfferSheet(offer) {
   return `
     <section class="driver-request-sheet" aria-label="Detalle de la solicitud seleccionada">
       <div class="driver-sheet-heading"><div><span class="eyebrow">Solicitud seleccionada</span><h3><span>Gana</span><strong>${formatCop(offer.proposedPriceCop)}</strong></h3><p>${formatPickupProximity(offer.pickupDistanceKilometers)} · ${escapeHtml(getRidePaymentMethodLabel(offer))}</p></div><button class="button button-quiet" type="button" data-close-driver-offer>Cerrar</button></div>
-      ${renderDriverMap(state.application)}
-      <div class="driver-sheet-route"><div><span class="route-letter route-letter-a">A</span><p><small>Recogida</small><strong>${escapeHtml(offer.pickupAddress)}</strong></p></div><div><span class="route-letter route-letter-b">B</span><p><small>Destino</small><strong>${escapeHtml(offer.destinationAddress)}</strong></p></div></div>
-      <button class="button driver-repeat-route" type="button" data-repeat-driver-route="${escapeHtml(offer.id)}">🔊 Escuchar direcciones completas</button>
       <div class="driver-sheet-metrics" aria-label="Resumen de distancias de la solicitud">
         <div><span>Hasta A</span><strong>${formatPickupProximity(offer.pickupDistanceKilometers)}</strong></div>
         <div><span>Trayecto A-B</span><strong>${formatDistance(offer.tripDistanceKilometers)}</strong></div>
@@ -3664,14 +3661,13 @@ function renderDriverOfferSheet(offer) {
       </div>
       ${renderDriverPriceReference(offer)}
       ${renderRidePreferenceTags(offer)}
-      ${renderPrivateCommunicationCard(offer)}
-      <p class="driver-sheet-note">La tarifa es la oferta del pasajero. Estas son distancias directas; el tiempo y la ruta por calles se añadirán cuando integremos navegación.</p>
-      ${renderDriverNavigationAction(offer, "pickup")}
-      <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}">Aceptar por ${formatCop(offer.proposedPriceCop)}</button>
-      <form class="driver-counter-sheet" data-counter-offer-ride="${offer.id}"><label for="counter-sheet-${offer.id}">Ofrece tu tarifa</label><div><input id="counter-sheet-${offer.id}" name="priceCop" type="number" min="${offer.proposedPriceCop}" step="1" value="${offer.proposedPriceCop}" required><button class="button button-secondary" type="submit">Enviar oferta</button></div></form>
+      <p class="driver-sheet-note">Revisa la tarifa y responde debajo. Al aceptar, esta solicitud pasa al servicio activo y aparecerán el mapa y las direcciones completas de recogida y destino.</p>
+      <div class="driver-offer-action-stack">
+        <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}">Aceptar por ${formatCop(offer.proposedPriceCop)}</button>
+        <form class="driver-counter-sheet" data-counter-offer-ride="${offer.id}"><label for="counter-sheet-${offer.id}">Enviar oferta alternativa</label><div><input id="counter-sheet-${offer.id}" name="priceCop" type="number" min="${offer.proposedPriceCop}" step="1" value="${offer.proposedPriceCop}" required><button class="button button-secondary" type="submit">Enviar oferta</button></div></form>
+      </div>
     </section>`;
 }
-
 function getDriverRecognition(summary = {}) {
   const rides = Number(summary.completedRideCount) || 0;
   const value = Number(summary.completedServiceValueCop) || 0;
