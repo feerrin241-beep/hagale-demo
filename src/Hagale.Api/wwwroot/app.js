@@ -3497,7 +3497,7 @@ function renderDashboard() {
   const driverLiveModeLabel = getDriverLiveModeLabel(driver);
   const modeHero = isDriverMode
     ? `<article class="mode-hero mode-hero-driver"><div><img class="hagale-logo-image mode-hero-logo" src="/assets/hagale-logo-black.png" alt="HÁGALE"><span class="eyebrow">MODO CONDUCTOR</span><h1>Recibe servicios y decide rápido.</h1><p>Panel simple: estado, ofertas cercanas y viaje paso a paso.</p><div class="driver-hero-actions"><button class="button button-secondary small driver-hero-return" type="button" data-set-mode="Customer">Ir a modo cliente</button>${renderDriverVisualModeButton("driver-hero-visual")}${renderDriverAlertButton("driver-hero-alert")}${renderInstallAppButton("driver-hero-install")}</div></div><div class="mode-kpis"><div><strong class="driver-mode-status-big">${driverLiveModeLabel}</strong><span>Modo conductor</span></div><div><strong>${visibleDriverOfferCount}</strong><span>Ofertas nuevas</span></div></div></article>`
-    : `<article class="mode-hero mode-hero-customer" data-reveal><div><img class="hagale-logo-image mode-hero-logo" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"><span class="eyebrow">Cliente</span><h1>Tu moto, tu precio.</h1><p>Define origen, destino y tu oferta. Si compartes A y B, verás una referencia por distancia directa antes de pedir la moto.</p></div><div class="mode-kpis"><div><strong>${escapeHtml(customerServiceStatus)}</strong><span>Estado actual</span></div><div><strong>${hasCustomerPricing ? "Moto" : "—"}</strong><span>${hasCustomerPricing ? "Servicio disponible" : "Tarifa pendiente"}</span></div></div></article>`;
+    : `<article class="mode-hero mode-hero-customer" data-reveal><div><img class="hagale-logo-image mode-hero-logo" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"><span class="eyebrow">Cliente</span><h1>Tu moto, tu precio.</h1><p>Define origen, destino y tu oferta. Si compartes A y B, HÁGALE calcula la ruta real por calles antes de pedir la moto.</p></div><div class="mode-kpis"><div><strong>${escapeHtml(customerServiceStatus)}</strong><span>Estado actual</span></div><div><strong>${hasCustomerPricing ? "Moto" : "—"}</strong><span>${hasCustomerPricing ? "Servicio disponible" : "Tarifa pendiente"}</span></div></div></article>`;
   const modeSwitch = hasDriverRole ? renderModeSwitchControl(isDriverMode) : "";
 
   const accountSummary = `
@@ -4324,7 +4324,7 @@ function renderCustomerRideTrackingPanel() {
       ${renderWaitingInformation(rideRequest, tracking, "customer")}
       ${renderJourneyTimeline({ ...rideRequest, ...tracking })}
       <div class="customer-tracking-actions"><button class="button button-secondary small" type="button" data-refresh-customer-tracking>Actualizar mapa</button><button class="button button-secondary small" type="button" data-test-customer-voice>🔊 Probar voz</button><span>${hasDriverLocation ? "Se muestra la última ubicación compartida." : "No se muestra ninguna ubicación hasta que el conductor la comparta."}</span></div>
-      <p class="customer-tracking-privacy">La línea amarilla/negra es una ruta referencial entre la última ubicación compartida, A y B. La navegación por calles y el tiempo estimado se conectarán con un proveedor GPS en la fase de producción.</p>
+      <p class="customer-tracking-privacy">La ruta amarilla/negra se calcula por calles entre la última ubicación compartida, A y B. Para indicaciones giro a giro, abre la navegación del teléfono.</p>
     </article>`;
 }
 
