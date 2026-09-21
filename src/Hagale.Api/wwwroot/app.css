@@ -669,6 +669,9 @@ h3 { margin-bottom: .35rem; font-size: 1rem; }
 .driver-map-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-top: .85rem; }
 .driver-map-footer p { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.45; }
 .driver-map-footer .button { flex: 0 0 auto; }
+.gps-diagnostic-row { display: flex; align-items: center; justify-content: space-between; gap: .65rem; margin-top: .55rem; color: var(--muted); font-size: .74rem; line-height: 1.35; }
+.gps-diagnostic-row > span { min-width: 0; }
+.gps-diagnostic-row .button { flex: 0 0 auto; white-space: nowrap; }
 .map-privacy-note { margin: .8rem 0 0; color: #557064; font-size: .73rem; line-height: 1.45; }
 .driver-map-canvas .leaflet-control-attribution { font-size: 10px; }
 .hagale-map-pin { border: 0 !important; background: transparent !important; }
@@ -1381,6 +1384,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); outline: 2
   .driver-map-frame, .driver-map-canvas { min-height: 270px; }
   .driver-map-footer { align-items: stretch; flex-direction: column; }
   .driver-map-footer .button { width: 100%; }
+  .gps-diagnostic-row { align-items: stretch; flex-direction: column; }
+  .gps-diagnostic-row .button { width: 100%; }
   .dispatch-location-row, .dispatch-filter-row { align-items: stretch; flex-direction: column; }
   .dispatch-location-row .button, .dispatch-filter-row > .button { width: 100%; }
   .dispatch-filter-row > div { justify-content: space-between; }

@@ -1473,6 +1473,10 @@ function renderDriverMap(driver) {
         <p>${help}</p>
         <button class="button button-secondary small" type="button" data-update-dispatch-location ${isReadyForDispatch ? "" : "disabled"}>${hasDriverPosition ? "Actualizar GPS" : "Activar GPS"}</button>
       </div>
+      <div class="gps-diagnostic-row" aria-live="polite">
+        <span data-gps-diagnostic-status>Si no aparece tu punto, comprueba el permiso de ubicación.</span>
+        <button class="button button-quiet small" type="button" data-diagnose-gps ${isReadyForDispatch ? "" : "disabled"}>Comprobar GPS</button>
+      </div>
       <p class="map-privacy-note">El seguimiento comienza únicamente cuando tú pulsas “Activar GPS”. Al desconectarte, se detiene y la ubicación se elimina del despacho.</p>
     </article>`;
 }
@@ -4516,6 +4520,10 @@ function renderCustomerRideLocationsStep() {
             <button class="location-button" type="button" data-capture-pickup-location>Usar GPS</button>
             <button class="location-button" type="button" data-open-ride-map="pickup">Elegir en el mapa</button>
           </div>
+          <div class="gps-diagnostic-row customer-gps-diagnostic" aria-live="polite">
+            <span data-gps-diagnostic-status>El GPS es opcional; también puedes marcar A en el mapa.</span>
+            <button class="button button-quiet small" type="button" data-diagnose-gps>Comprobar GPS</button>
+          </div>
           <span id="pickup-location-status" class="small-text muted">${state.pendingPickupLocation ? "Punto A listo para esta solicitud." : "Escribe la dirección o toca el mapa para ubicar A."}</span>
         </div>
         <div class="field wide route-entry route-entry-b">
@@ -4852,6 +4860,27 @@ async function readDeviceLocation() {
     } catch (fallbackError) {
       throw new Error(getDeviceLocationErrorMessage(fallbackError));
     }
+  }
+}
+
+async function diagnoseDeviceLocation() {
+  const buttons = [...app.querySelectorAll("[data-diagnose-gps]")];
+  const statuses = [...app.querySelectorAll("[data-gps-diagnostic-status]")];
+  buttons.forEach(button => { button.disabled = true; });
+  statuses.forEach(status => { status.textContent = "Comprobando permiso y señal…"; });
+  try {
+    const coords = await readDeviceLocation();
+    const accuracy = Number.isFinite(coords.accuracy) ? Math.round(coords.accuracy) : null;
+    const message = accuracy
+      ? `GPS listo · precisión aproximada ${accuracy} m.`
+      : "GPS listo · ubicación recibida.";
+    statuses.forEach(status => { status.textContent = message; });
+    showNotice(message);
+  } catch (error) {
+    const message = error.message || "No se pudo comprobar el GPS.";
+    statuses.forEach(status => { status.textContent = message; });
+  } finally {
+    buttons.forEach(button => { button.disabled = false; });
   }
 }
 
@@ -5199,6 +5228,9 @@ function bindDriverEvents() {
   });
   app.querySelectorAll("[data-update-dispatch-location]").forEach(button => {
     button.addEventListener("click", updateDispatchLocation);
+  });
+  app.querySelectorAll("[data-diagnose-gps]").forEach(button => {
+    button.addEventListener("click", diagnoseDeviceLocation);
   });
   const dispatchRefreshButton = app.querySelector("[data-refresh-dispatch]");
   if (dispatchRefreshButton) dispatchRefreshButton.addEventListener("click", async () => {
