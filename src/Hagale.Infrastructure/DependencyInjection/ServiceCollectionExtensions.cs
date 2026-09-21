@@ -83,7 +83,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPricingRuleRepository, PricingRuleRepository>();
         services.AddScoped<IEmergencyContactRepository, EmergencyContactRepository>();
         services.AddScoped<IEmergencyServiceChannelRepository, EmergencyServiceChannelRepository>();
-        services.AddScoped<IPrivateDocumentStorage, LocalPrivateDocumentStorage>();
+        services.AddScoped<IPrivateDocumentStorage, DatabasePrivateDocumentStorage>();
         services.AddScoped<IDriverApplicationService, DriverApplicationService>();
         services.AddScoped<IRideRequestService, RideRequestService>();
         services.AddScoped<IRideChatService, RideChatService>();

@@ -16,6 +16,7 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
     public DbSet<DriverProfile> DriverProfiles => Set<DriverProfile>();
     public DbSet<Vehicle> Vehicles => Set<Vehicle>();
     public DbSet<DriverDocument> DriverDocuments => Set<DriverDocument>();
+    public DbSet<StoredDocumentBlob> StoredDocumentBlobs => Set<StoredDocumentBlob>();
     public DbSet<RideRequest> RideRequests => Set<RideRequest>();
     public DbSet<RideChatMessage> RideChatMessages => Set<RideChatMessage>();
     public DbSet<RideRating> RideRatings => Set<RideRating>();
@@ -102,6 +103,21 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
                 .WithMany()
                 .HasForeignKey(document => document.ReviewedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<StoredDocumentBlob>(entity =>
+        {
+            entity.ToTable("StoredDocumentBlobs");
+            entity.HasKey(document => document.StorageObjectKey);
+            entity.Property(document => document.StorageObjectKey).HasMaxLength(500).IsRequired();
+            entity.Property(document => document.ContentType).HasMaxLength(120).IsRequired();
+            entity.Property(document => document.Content).IsRequired();
+            entity.Property(document => document.CreatedAtUtc).IsRequired();
+            if (usesPostgres)
+            {
+                entity.Property(document => document.Content).HasColumnType("bytea");
+            }
+            entity.HasIndex(document => document.OwnerUserId);
         });
 
         builder.Entity<AuditLog>(entity =>

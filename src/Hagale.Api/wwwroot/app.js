@@ -79,6 +79,7 @@ const state = {
   driverNav: "requests",
   selectedDriverOfferId: null,
   driverLocationWatchId: null,
+  driverLocationUsesHighAccuracy: true,
   lastDriverLocationSentAt: 0,
   isSendingDriverLocation: false,
   locationTrackingErrorShown: false,
@@ -2578,6 +2579,7 @@ function stopDriverLocationTracking() {
   state.lastDriverLocationSentAt = 0;
   state.isSendingDriverLocation = false;
   state.locationTrackingErrorShown = false;
+  state.driverLocationUsesHighAccuracy = true;
 }
 
 function applyLocalDriverLocation(location) {
@@ -2597,10 +2599,15 @@ async function saveDriverLocation(location) {
   });
 }
 
-function startDriverLocationTracking() {
-  if (!navigator.geolocation || state.driverLocationWatchId !== null) return;
+function startDriverLocationTracking({ highAccuracy = true } = {}) {
+  if (!navigator.geolocation) {
+    showNotice("Este navegador no ofrece GPS. Abre HÁGALE en Chrome, Firefox o Safari y permite la ubicación.", true);
+    return;
+  }
+  if (state.driverLocationWatchId !== null) return;
 
   state.locationTrackingErrorShown = false;
+  state.driverLocationUsesHighAccuracy = highAccuracy;
   state.driverLocationWatchId = navigator.geolocation.watchPosition(
     async position => {
       if (!["Available", "Busy"].includes(state.application?.availabilityStatus)) {
@@ -2629,17 +2636,19 @@ function startDriverLocationTracking() {
       }
     },
     error => {
+      if (error.code === 3 && state.driverLocationUsesHighAccuracy) {
+        navigator.geolocation.clearWatch(state.driverLocationWatchId);
+        state.driverLocationWatchId = null;
+        showNotice("El GPS preciso tardó demasiado. Buscando una ubicación aproximada…");
+        startDriverLocationTracking({ highAccuracy: false });
+        return;
+      }
       if (state.locationTrackingErrorShown) return;
       state.locationTrackingErrorShown = true;
       if (error.code === 1) stopDriverLocationTracking();
-      showNotice(
-        error.code === 1
-          ? "El GPS se detuvo porque no hay permiso de ubicación."
-          : "No se pudo actualizar el GPS en este momento.",
-        true
-      );
+      showNotice(getDeviceLocationErrorMessage(error), true);
     },
-    { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 }
+    { enableHighAccuracy: highAccuracy, maximumAge: highAccuracy ? 5_000 : 30_000, timeout: highAccuracy ? 15_000 : 20_000 }
   );
 }
 
@@ -4796,22 +4805,54 @@ function renderVehicleForm(vehicle = null) {
   </form>`;
 }
 
-function readDeviceLocation() {
+function getDeviceLocationErrorMessage(error) {
+  if (error?.code === 1) {
+    return "No se concedió permiso de ubicación. En el candado de la barra del navegador permite Ubicación para HÁGALE y vuelve a tocar Usar GPS.";
+  }
+  if (error?.code === 2) {
+    return "El teléfono no puede determinar tu ubicación. Activa Ubicación/GPS y datos o Wi‑Fi, y prueba nuevamente.";
+  }
+  if (error?.code === 3) {
+    return "El GPS tardó demasiado. Muévete a una zona con mejor señal o elige el punto directamente en el mapa.";
+  }
+  return "No fue posible obtener la ubicación en este momento.";
+}
+
+function getCurrentDevicePosition(options) {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+async function readDeviceLocation() {
   if (!navigator.geolocation) {
-    return Promise.reject(new Error("Este dispositivo no ofrece ubicación del navegador."));
+    throw new Error("Este navegador no ofrece GPS. Abre HÁGALE en Chrome, Firefox o Safari y permite la ubicación.");
   }
   if (!window.isSecureContext && window.location.hostname !== "localhost") {
-    return Promise.reject(new Error("El GPS del teléfono requiere abrir HÁGALE mediante HTTPS; la dirección HTTP local solo muestra la interfaz."));
+    throw new Error("El GPS del teléfono requiere abrir HÁGALE mediante HTTPS; la dirección HTTP local solo muestra la interfaz.");
   }
 
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      position => resolve(position.coords),
-      error => reject(new Error(error.code === 1
-        ? "No se concedió permiso para usar la ubicación."
-        : "No fue posible obtener la ubicación en este momento.")),
-      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 12_000 });
-  });
+  try {
+    const precisePosition = await getCurrentDevicePosition({
+      enableHighAccuracy: true,
+      maximumAge: 15_000,
+      timeout: 12_000
+    });
+    return precisePosition.coords;
+  } catch (error) {
+    if (error?.code !== 3) throw new Error(getDeviceLocationErrorMessage(error));
+    try {
+      const approximatePosition = await getCurrentDevicePosition({
+        enableHighAccuracy: false,
+        maximumAge: 60_000,
+        timeout: 10_000
+      });
+      showNotice("Usamos una ubicación aproximada porque la señal GPS precisa tardó.");
+      return approximatePosition.coords;
+    } catch (fallbackError) {
+      throw new Error(getDeviceLocationErrorMessage(fallbackError));
+    }
+  }
 }
 
 async function captureRideLocation(target) {

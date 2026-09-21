@@ -28,6 +28,18 @@ public static class DatabaseInitializer
         if (database.Database.IsNpgsql())
         {
             await database.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "StoredDocumentBlobs" (
+                    "StorageObjectKey" character varying(500) NOT NULL,
+                    "OwnerUserId" uuid NOT NULL,
+                    "ContentType" character varying(120) NOT NULL,
+                    "Content" bytea NOT NULL,
+                    "CreatedAtUtc" timestamp with time zone NOT NULL,
+                    CONSTRAINT "PK_StoredDocumentBlobs" PRIMARY KEY ("StorageObjectKey")
+                );
+                CREATE INDEX IF NOT EXISTS "IX_StoredDocumentBlobs_OwnerUserId"
+                    ON "StoredDocumentBlobs" ("OwnerUserId");
+                """, cancellationToken);
+            await database.Database.ExecuteSqlRawAsync("""
                 ALTER TABLE "PricingRules"
                     ADD COLUMN IF NOT EXISTS "FairOfferMinimumPercent" integer NOT NULL DEFAULT 90;
                 ALTER TABLE "PricingRules"

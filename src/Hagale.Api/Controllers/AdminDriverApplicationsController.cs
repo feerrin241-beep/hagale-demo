@@ -66,7 +66,7 @@ public sealed class AdminDriverApplicationsController(
         var document = result.Value;
         var storedDocument = await privateDocumentStorage.OpenReadAsync(document.StorageObjectKey, cancellationToken);
         return storedDocument is null
-            ? NotFound(new ProblemDetails { Title = "Documento no encontrado.", Detail = "El archivo privado no existe en el almacenamiento local." })
+            ? NotFound(new ProblemDetails { Title = "Documento no encontrado.", Detail = "El archivo privado no existe en el almacenamiento permanente." })
             : File(storedDocument.Content, storedDocument.ContentType, document.DownloadFileName, enableRangeProcessing: true);
     }
 
