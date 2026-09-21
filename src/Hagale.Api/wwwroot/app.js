@@ -60,6 +60,8 @@ const state = {
   pendingDestinationLocation: null,
   customerRideQuote: null,
   customerRideQuoteVersion: 0,
+  roadRouteCache: new Map(),
+  roadRoutePending: new Map(),
   customerRideTracking: null,
   customerTrackingMap: null,
   customerTrackingPollingTimer: null,
@@ -1309,6 +1311,82 @@ function orderMapRoutePoints(points, { includeDriver = true } = {}) {
   ].filter(Boolean);
 }
 
+function roadRouteKey(origin, destination) {
+  return [origin, destination]
+    .map(point => `${Number(point.latitude).toFixed(5)},${Number(point.longitude).toFixed(5)}`)
+    .join(";");
+}
+
+async function getRoadRoute(origin, destination) {
+  if (!origin || !destination) return null;
+  const key = roadRouteKey(origin, destination);
+  if (state.roadRouteCache.has(key)) return state.roadRouteCache.get(key);
+  if (state.roadRoutePending.has(key)) return state.roadRoutePending.get(key);
+
+  const query = new URLSearchParams({
+    originLatitude: Number(origin.latitude).toFixed(6),
+    originLongitude: Number(origin.longitude).toFixed(6),
+    destinationLatitude: Number(destination.latitude).toFixed(6),
+    destinationLongitude: Number(destination.longitude).toFixed(6)
+  });
+  const pending = request(`/routes/estimate?${query.toString()}`)
+    .then(route => {
+      state.roadRouteCache.set(key, route);
+      return route;
+    })
+    .catch(error => {
+      console.warn("No se pudo obtener la ruta real", error);
+      return null;
+    })
+    .finally(() => state.roadRoutePending.delete(key));
+  state.roadRoutePending.set(key, pending);
+  return pending;
+}
+
+function roadRouteLatLngs(route) {
+  return (route?.geometry || [])
+    .map(point => [Number(point.latitude), Number(point.longitude)])
+    .filter(point => point.every(Number.isFinite));
+}
+
+function drawRoadRouteSegments(leaflet, map, segments) {
+  const validSegments = (segments || []).filter(segment => roadRouteLatLngs(segment.route).length > 1);
+  if (!validSegments.length) return null;
+  const routeLayerGroup = leaflet.layerGroup().addTo(map);
+  validSegments.forEach(segment => {
+    const coordinates = roadRouteLatLngs(segment.route);
+    const color = segment.color || "#111218";
+    const casingColor = segment.casingColor || "#ffd800";
+    leaflet.polyline(coordinates, {
+      color: "#ffffff",
+      weight: 10,
+      opacity: .94,
+      lineCap: "round",
+      lineJoin: "round"
+    }).addTo(routeLayerGroup);
+    leaflet.polyline(coordinates, {
+      color,
+      weight: 5,
+      opacity: .98,
+      lineCap: "round",
+      lineJoin: "round"
+    }).addTo(routeLayerGroup);
+    leaflet.polyline(coordinates, {
+      color: casingColor,
+      weight: 1.5,
+      opacity: .72,
+      lineCap: "round",
+      lineJoin: "round"
+    }).addTo(routeLayerGroup);
+  });
+  return routeLayerGroup;
+}
+
+function replaceRouteBadge(container, text) {
+  const badge = container?.querySelector(".driver-map-route-badge");
+  if (badge && text) badge.textContent = text;
+}
+
 function drawReferenceRoute(leaflet, map, points, { includeDriver = true } = {}) {
   const orderedPoints = orderMapRoutePoints(points, { includeDriver });
   if (orderedPoints.length < 2) return null;
@@ -1538,12 +1616,12 @@ function renderCustomerRideQuote() {
   );
   const quote = state.customerRideQuote;
   if (quote) {
-    return `<strong>Referencia por distancia directa A–B: ${formatCop(quote.recommendedFareCop)}</strong><span>${formatDistance(quote.estimatedDistanceKilometers)} · incluye la tarifa mínima ${formatCop(quote.minimumFareCop)}. Puedes proponer otro valor igual o mayor al mínimo.</span>`;
+    return `<strong>Ruta real A–B: ${formatCop(quote.recommendedFareCop)}</strong><span>${formatDistance(quote.estimatedDistanceKilometers)} · aprox. ${quote.estimatedDurationMinutes} min por calles · mínimo ${formatCop(quote.minimumFareCop)}.</span>`;
   }
   if (pickup && destination) {
-    return "<strong>Calculando referencia por distancia directa…</strong><span>No incluye ruta por calles, tráfico ni tiempo.</span>";
+    return "<strong>Calculando ruta real…</strong><span>Estamos obteniendo kilómetros y tiempo estimado por las calles.</span>";
   }
-  return "<strong>Marca A y B para ver una referencia por distancia.</strong><span>La tarifa mínima sigue siendo la regla obligatoria mientras no se compartan ambos puntos.</span>";
+  return "<strong>Marca A y B para calcular la ruta real.</strong><span>La tarifa mínima sigue siendo la regla obligatoria mientras no se compartan ambos puntos.</span>";
 }
 
 function updateCustomerRideQuoteUi() {
@@ -1568,32 +1646,29 @@ async function refreshCustomerRideQuote() {
     return;
   }
 
-  const distance = calculateDirectDistanceKilometers(pickup, destination);
-  if (!Number.isFinite(distance) || distance < 0) {
-    state.customerRideQuote = null;
-    updateCustomerRideQuoteUi();
-    return;
-  }
-
   state.customerRideQuote = null;
   updateCustomerRideQuoteUi();
   try {
+    const route = await getRoadRoute(pickup, destination);
+    if (!route) {
+      throw new Error("No se pudo calcular la ruta real.");
+    }
     const query = new URLSearchParams({
       cityCode: pricingRule.cityCode,
       serviceType: pricingRule.serviceType,
-      estimatedDistanceKilometers: distance.toFixed(3),
-      estimatedDurationMinutes: "0"
+      estimatedDistanceKilometers: Number(route.distanceKilometers).toFixed(3),
+      estimatedDurationMinutes: String(route.estimatedDurationMinutes)
     });
     const quote = await request(`/pricing/quote?${query.toString()}`);
     if (version !== state.customerRideQuoteVersion) return;
-    state.customerRideQuote = quote;
+    state.customerRideQuote = { ...quote, route };
     updateCustomerRideQuoteUi();
   } catch {
     if (version !== state.customerRideQuoteVersion) return;
     state.customerRideQuote = null;
     const quoteElement = app.querySelector("#ride-price-reference");
     if (quoteElement) {
-      quoteElement.innerHTML = "<strong>No se pudo calcular la referencia ahora.</strong><span>La tarifa mínima de la regla seleccionada continúa siendo obligatoria.</span>";
+      quoteElement.innerHTML = "<strong>No se pudo calcular la ruta real ahora.</strong><span>La tarifa mínima continúa siendo obligatoria; revisa la conexión e inténtalo de nuevo.</span>";
     }
   }
 }
@@ -1712,9 +1787,9 @@ function mountCustomerTrackingMap() {
     });
 
     const routePoints = points.filter(point => ["driver", "pickup", "destination"].includes(point.kind));
-    const routeLayerGroup = drawReferenceRoute(leaflet, map, routePoints, { includeDriver: true });
+    let routeLayerGroup = drawReferenceRoute(leaflet, map, routePoints, { includeDriver: true });
     if (routeLayerGroup) {
-      addMapRouteBadge(container, "Ruta referencial · última ubicación compartida");
+      addMapRouteBadge(container, "Calculando ruta real por calles…");
     }
     if (bounds.length > 1) {
       map.fitBounds(bounds, { padding: [36, 36], maxZoom: 16 });
@@ -1724,7 +1799,22 @@ function mountCustomerTrackingMap() {
       map.setView(getRideMapFallbackCenter(rideRequest.operatingCityCode), 13);
     }
 
-    state.customerTrackingMap = { map, rideRequestId: rideRequest.id, routeLayerGroup };
+    const mapState = { map, rideRequestId: rideRequest.id, routeLayerGroup };
+    state.customerTrackingMap = mapState;
+    const pickupPoint = points.find(point => point.kind === "pickup");
+    const destinationPoint = points.find(point => point.kind === "destination");
+    if (pickupPoint && destinationPoint) {
+      void getRoadRoute(pickupPoint, destinationPoint).then(route => {
+        if (!route || state.customerTrackingMap !== mapState) return;
+        mapState.routeLayerGroup?.remove();
+        mapState.routeLayerGroup = drawRoadRouteSegments(leaflet, map, [{
+          route,
+          color: "#111218",
+          casingColor: "#ffd800"
+        }]);
+        replaceRouteBadge(container, `Ruta real A → B · ${formatDistance(route.distanceKilometers)} · ${route.estimatedDurationMinutes} min`);
+      });
+    }
     window.setTimeout(() => map.invalidateSize(), 0);
   } catch {
     renderCustomerTrackingMapFallback(container, rideRequest, tracking);
@@ -2192,9 +2282,9 @@ function mountCustomerRideMap() {
       }).addTo(map).bindTooltip(point.title, { direction: "top", offset: [0, -15] });
     });
 
-    const routeLayerGroup = drawReferenceRoute(leaflet, map, points, { includeDriver: false });
+    let routeLayerGroup = drawReferenceRoute(leaflet, map, points, { includeDriver: false });
     if (routeLayerGroup) {
-      addMapRouteBadge(container, "A → B · ruta referencial");
+      addMapRouteBadge(container, "A → B · calculando ruta real…");
       map.fitBounds(bounds, { padding: [36, 36], maxZoom: 16 });
     } else if (bounds.length === 1) {
       map.setView(bounds[0], 15);
@@ -2208,7 +2298,20 @@ function mountCustomerRideMap() {
         longitude: Number(event.latlng.lng.toFixed(6))
       });
     });
-    state.customerRideMap = { map, routeLayerGroup };
+    const mapState = { map, routeLayerGroup };
+    state.customerRideMap = mapState;
+    if (points.length >= 2) {
+      void getRoadRoute(points[0], points[1]).then(route => {
+        if (!route || state.customerRideMap !== mapState) return;
+        mapState.routeLayerGroup?.remove();
+        mapState.routeLayerGroup = drawRoadRouteSegments(leaflet, map, [{
+          route,
+          color: "#111218",
+          casingColor: "#ffd800"
+        }]);
+        replaceRouteBadge(container, `A → B · ruta real · ${formatDistance(route.distanceKilometers)} · ${route.estimatedDurationMinutes} min`);
+      });
+    }
     window.setTimeout(() => map.invalidateSize(), 0);
   } catch {
     renderCustomerRideMapFallback(container);
@@ -2347,9 +2450,9 @@ function mountDriverMap() {
     const routePoints = mappedRequest
       ? points.filter(point => ["driver", "pickup", "destination"].includes(point.kind))
       : [];
-    const routeLayerGroup = drawReferenceRoute(leaflet, map, routePoints, { includeDriver: true });
+    let routeLayerGroup = drawReferenceRoute(leaflet, map, routePoints, { includeDriver: true });
     if (routeLayerGroup) {
-      addMapRouteBadge(container, "Ruta referencial · abre navegación para calles");
+      addMapRouteBadge(container, "Calculando ruta real por calles…");
     }
 
     let driverMarker = null;
@@ -2378,7 +2481,40 @@ function mountDriverMap() {
       container.appendChild(overlay);
     }
 
-    state.driverMap = { map, driverMarker, routeLayerGroup, routePoints };
+    const mapState = { map, driverMarker, routeLayerGroup, routePoints, roadRouteActive: false };
+    state.driverMap = mapState;
+    if (mappedRequest) {
+      const driverPoint = routePoints.find(point => point.kind === "driver");
+      const pickupPoint = routePoints.find(point => point.kind === "pickup");
+      const destinationPoint = routePoints.find(point => point.kind === "destination");
+      const segments = [];
+      if (driverPoint && pickupPoint) {
+        segments.push(getRoadRoute(driverPoint, pickupPoint).then(route => ({
+          route,
+          color: "#ffd800",
+          casingColor: "#111218"
+        })));
+      }
+      if (pickupPoint && destinationPoint) {
+        segments.push(getRoadRoute(pickupPoint, destinationPoint).then(route => ({
+          route,
+          color: "#111218",
+          casingColor: "#ffd800"
+        })));
+      }
+      if (segments.length) {
+        void Promise.all(segments).then(routeSegments => {
+          if (state.driverMap !== mapState) return;
+          const usableSegments = routeSegments.filter(segment => segment.route);
+          if (!usableSegments.length) return;
+          mapState.routeLayerGroup?.remove();
+          mapState.routeLayerGroup = drawRoadRouteSegments(leaflet, map, usableSegments);
+          mapState.roadRouteActive = true;
+          const totalMinutes = usableSegments.reduce((sum, segment) => sum + Number(segment.route.estimatedDurationMinutes || 0), 0);
+          replaceRouteBadge(container, `Ruta real · ${totalMinutes} min estimados · usa navegación para giros`);
+        });
+      }
+    }
     window.setTimeout(() => map.invalidateSize(), 0);
   } catch {
     renderFallbackDriverMap(container, points, fallbackCenter);
@@ -2394,15 +2530,42 @@ function updateDriverMapPosition(location) {
 
   const latLng = [location.latitude, location.longitude];
   mapState.driverMarker.setLatLng(latLng);
-  if (mapState.routeLayerGroup && Array.isArray(mapState.routePoints)) {
+  if (Array.isArray(mapState.routePoints)) {
     const updatedRoutePoints = mapState.routePoints.map(point => point.kind === "driver"
       ? { ...point, latitude: location.latitude, longitude: location.longitude }
       : point);
-    mapState.routeLayerGroup.remove();
-    mapState.routeLayerGroup = drawReferenceRoute(window.L, mapState.map, updatedRoutePoints, { includeDriver: true });
     mapState.routePoints = updatedRoutePoints;
+    if (mapState.routeLayerGroup && !mapState.roadRouteActive) {
+      mapState.routeLayerGroup.remove();
+      mapState.routeLayerGroup = drawReferenceRoute(window.L, mapState.map, updatedRoutePoints, { includeDriver: true });
+    } else if (mapState.roadRouteActive) {
+      void refreshDriverRoadRoute(mapState);
+    }
   }
   mapState.map.panTo(latLng, { animate: true, duration: .6 });
+}
+
+async function refreshDriverRoadRoute(mapState) {
+  if (!mapState?.map || !Array.isArray(mapState.routePoints)) return;
+  const now = Date.now();
+  if (now - Number(mapState.lastRoadRouteRefreshAt || 0) < 15_000) return;
+  const driverPoint = mapState.routePoints.find(point => point.kind === "driver");
+  const pickupPoint = mapState.routePoints.find(point => point.kind === "pickup");
+  const destinationPoint = mapState.routePoints.find(point => point.kind === "destination");
+  if (!driverPoint || !pickupPoint) return;
+
+  mapState.lastRoadRouteRefreshAt = now;
+  const segments = await Promise.all([
+    getRoadRoute(driverPoint, pickupPoint).then(route => ({ route, color: "#ffd800", casingColor: "#111218" })),
+    destinationPoint
+      ? getRoadRoute(pickupPoint, destinationPoint).then(route => ({ route, color: "#111218", casingColor: "#ffd800" }))
+      : Promise.resolve(null)
+  ]);
+  if (state.driverMap !== mapState) return;
+  const usableSegments = segments.filter(segment => segment?.route);
+  if (!usableSegments.length) return;
+  mapState.routeLayerGroup?.remove();
+  mapState.routeLayerGroup = drawRoadRouteSegments(window.L, mapState.map, usableSegments);
 }
 
 function stopDriverLocationTracking() {

@@ -3,6 +3,7 @@ using Hagale.Application.Contracts;
 using Hagale.Application.Drivers;
 using Hagale.Application.Pricing;
 using Hagale.Application.Rides;
+using Hagale.Application.Routing;
 using Hagale.Application.Safety;
 using Hagale.Infrastructure.Authentication;
 using Hagale.Infrastructure.Identity;
@@ -13,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using Hagale.Infrastructure.Routing;
 
 namespace Hagale.Infrastructure.DependencyInjection;
 
@@ -65,6 +67,10 @@ public static class ServiceCollectionExtensions
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.Configure<GoogleAuthenticationOptions>(configuration.GetSection(GoogleAuthenticationOptions.SectionName));
         services.Configure<DocumentStorageOptions>(configuration.GetSection(DocumentStorageOptions.SectionName));
+        services.Configure<RoadRoutingOptions>(configuration.GetSection(RoadRoutingOptions.SectionName));
+        services.AddMemoryCache();
+        services.AddSingleton<HttpClient>();
+        services.AddTransient<IRoadRoutingService, OsrmRoadRoutingService>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthenticationService, IdentityAuthenticationService>();
