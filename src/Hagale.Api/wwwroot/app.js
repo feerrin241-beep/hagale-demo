@@ -1450,13 +1450,13 @@ function renderDriverMap(driver) {
   const status = hasDriverPosition
     ? state.driverLocationWatchId !== null ? "GPS en vivo" : "Ubicación registrada"
     : "GPS pendiente";
-  const help = hasDriverPosition
+  const help = !isReadyForDispatch
+    ? "Para compartir tu ubicación en el despacho, primero pulsa “Activar disponibilidad”."
+    : hasDriverPosition
     ? state.driverCurrentRideRequest
       ? "Tu moto se actualiza al compartir GPS. La ruta dibujada es referencial; usa Abrir navegación para calles y giros reales."
       : "Tu moto aparece en el mapa. Las recogidas con ubicación compartida se mostrarán como puntos A."
-    : isReadyForDispatch
-      ? "Activa el GPS para ver tu moto y ordenar las solicitudes por cercanía."
-      : "Activa tu disponibilidad para permitir el uso del GPS de despacho.";
+    : "Activa el GPS para ver tu moto y ordenar las solicitudes por cercanía.";
 
   return `
     <article class="driver-map-card">
@@ -1475,7 +1475,7 @@ function renderDriverMap(driver) {
       </div>
       <div class="gps-diagnostic-row" aria-live="polite">
         <span data-gps-diagnostic-status>Si no aparece tu punto, comprueba el permiso de ubicación.</span>
-        <button class="button button-quiet small" type="button" data-diagnose-gps ${isReadyForDispatch ? "" : "disabled"}>Comprobar GPS</button>
+        <button class="button button-quiet small" type="button" data-diagnose-gps>Comprobar GPS</button>
       </div>
       <p class="map-privacy-note">El seguimiento comienza únicamente cuando tú pulsas “Activar GPS”. Al desconectarte, se detiene y la ubicación se elimina del despacho.</p>
     </article>`;
@@ -3447,7 +3447,7 @@ function renderDriverWorkspacePanel(driver, hasActiveJourney) {
     return `${quickActions}${renderDriverPanel(driver, true)}${renderSafetyPanel("conductor")}`;
   }
 
-  return `${quickActions}${hasActiveJourney ? renderDriverMap(driver) : ""}${renderDriverRideRequestsPanel()}`;
+  return `${quickActions}${renderDriverMap(driver)}${renderDriverRideRequestsPanel()}`;
 }
 
 function getDriverLiveModeLabel(driver) {
