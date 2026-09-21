@@ -10,6 +10,8 @@ const driverVoiceAlertsKey = "hagale.driver-voice-alerts";
 const driverSystemAlertsKey = "hagale.driver-system-alerts";
 const visualModeKey = "hagale.visual-mode.v2";
 const accountSplashSessionKey = "hagale.account-splash-shown";
+const accountSplashDurationMs = 1200;
+const accountSplashLeaveMs = 950;
 const app = document.querySelector("#app");
 const notice = document.querySelector("#notice");
 
@@ -3230,16 +3232,22 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
       state.activeMode = "Customer";
       sessionStorage.removeItem(modeKey);
     }
-    try {
-      state.application = await request("/driver-application/me");
-    } catch (error) {
-      if (!/Solicitud no encontrada|no tiene una solicitud/i.test(error.message)) throw error;
-      state.application = null;
-    }
 
-    state.rideRequests = state.profile.roles.includes("Customer")
-      ? await request("/ride-requests/me")
-      : [];
+    const applicationPromise = request("/driver-application/me")
+      .then(application => ({ application, error: null }))
+      .catch(error => ({ application: null, error }));
+    const rideRequestsPromise = state.profile.roles.includes("Customer")
+      ? request("/ride-requests/me")
+      : Promise.resolve([]);
+    const [{ application, error: applicationError }, rideRequests] = await Promise.all([
+      applicationPromise,
+      rideRequestsPromise
+    ]);
+    if (applicationError && !/Solicitud no encontrada|no tiene una solicitud/i.test(applicationError.message)) {
+      throw applicationError;
+    }
+    state.application = application;
+    state.rideRequests = rideRequests;
     if (state.profile.roles.includes("Customer")) {
       await refreshCustomerRideTracking();
     } else {
@@ -3262,21 +3270,24 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
       state.driverCompletedRideRequests = [];
       state.driverActivitySummary = null;
     }
-    state.emergencyContacts = await request("/safety/emergency-contacts/me");
-    state.pricingRules = state.profile.roles.includes("Administrator")
-      ? await request("/admin/pricing-rules")
+    const emergencyContactsPromise = request("/safety/emergency-contacts/me");
+    const pricingRulesPromise = state.profile.roles.includes("Administrator")
+      ? request("/admin/pricing-rules")
       : state.profile.roles.includes("Customer")
-        ? await request("/pricing/rules")
-        : [];
-    state.emergencyServiceChannels = state.profile.roles.includes("Administrator")
-      ? await request("/admin/safety/emergency-channels")
-      : [];
-
-    if (state.profile.roles.includes("Administrator")) {
-      await loadAdminApplications();
-    } else {
-      state.adminApplications = null;
-    }
+        ? request("/pricing/rules")
+        : Promise.resolve([]);
+    const emergencyServiceChannelsPromise = state.profile.roles.includes("Administrator")
+      ? request("/admin/safety/emergency-channels")
+      : Promise.resolve([]);
+    const adminApplicationsPromise = state.profile.roles.includes("Administrator")
+      ? loadAdminApplications().then(() => state.adminApplications)
+      : Promise.resolve(null);
+    [state.emergencyContacts, state.pricingRules, state.emergencyServiceChannels, state.adminApplications] = await Promise.all([
+      emergencyContactsPromise,
+      pricingRulesPromise,
+      emergencyServiceChannelsPromise,
+      adminApplicationsPromise
+    ]);
     if (!sessionStorage.getItem(accountSplashSessionKey)) {
       state.accountSplashPending = true;
       sessionStorage.setItem(accountSplashSessionKey, "true");
@@ -3533,11 +3544,11 @@ function renderDashboard() {
     splash.innerHTML = `<div class="account-entry-splash-inner"><img src="/assets/hagale-logo-black.png" alt="HÁGALE" class="account-entry-splash-logo"><p class="account-entry-splash-title"><span>TU MOTO</span><span>TU PRECIO</span></p><span class="account-entry-splash-arrow" aria-hidden="true">➜</span></div>`;
     app.prepend(splash);
     document.body.classList.add("account-splash-active");
-    window.setTimeout(() => splash.classList.add("is-leaving"), 2750);
+    window.setTimeout(() => splash.classList.add("is-leaving"), accountSplashLeaveMs);
     window.setTimeout(() => {
       splash.remove();
       document.body.classList.remove("account-splash-active");
-    }, 3000);
+    }, accountSplashDurationMs);
   }
   app.querySelectorAll("[data-sign-out]").forEach(button => {
     button.addEventListener("click", () => signOut(true));
