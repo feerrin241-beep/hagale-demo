@@ -7431,3 +7431,122 @@ body.account-splash-active { overflow: hidden !important; }
 .driver-offer-classification.is-fair { color: #714710; border-color: #efc767; background: #fff0b5; }
 .driver-offer-classification.is-favorable { color: #075d39; border-color: #72c997; background: #ccefdc; }
 .driver-offer-classification.is-pending { color: #50545c; border-color: #c9cacf; background: #e8e9eb; }
+
+/* Ajustes finales solicitados: controles centrados, paneles compactos y lectura clara en 9:16. */
+.driver-gps-diagnostic {
+  display: grid;
+  justify-items: center;
+  gap: .38rem;
+  text-align: center;
+}
+.driver-gps-diagnostic .button { width: auto !important; min-width: 9.5rem; }
+.driver-gps-diagnostic span { max-width: 32rem; }
+.safety-assist-button {
+  color: #fff !important;
+  background: #7d3038 !important;
+  border-color: #e07b83 !important;
+  font-weight: 950;
+}
+.safety-assist-button:hover,
+.safety-assist-button:focus-visible { background: #a34550 !important; }
+.driver-route-audio-actions { display: flex; flex-wrap: wrap; gap: .55rem; align-items: stretch; }
+.driver-route-audio-actions .driver-repeat-route { flex: 1 1 14rem; }
+.driver-route-audio-actions .safety-assist-button { flex: 0 1 auto; }
+.customer-history-primary-action { display: grid; place-items: center; margin: .2rem 0 1rem; }
+.customer-history-primary-action .button { min-width: min(22rem, 100%); min-height: 3.8rem; font-size: 1.25rem; font-weight: 1000; }
+.customer-panel-stage[data-active-customer-panel="ride"] .route-entry > input:not([type="radio"]),
+.customer-panel-stage[data-active-customer-panel="ride"] .route-entry > select {
+  border: 2px solid #111218 !important;
+  border-radius: .65rem !important;
+  background: #fff !important;
+  color: #111218 !important;
+  box-shadow: none !important;
+}
+.customer-panel-stage[data-active-customer-panel="ride"] .route-entry {
+  width: 100%;
+  margin-inline: 0;
+}
+.customer-panel-stage[data-active-customer-panel="ride"] .ride-location-map-frame {
+  width: 100%;
+  margin-inline: 0;
+}
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card,
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage,
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-search-card {
+  width: 100%;
+  max-width: 100%;
+}
+.customer-app-actions [data-sign-out] {
+  color: #fff !important;
+  background: #bd4c57 !important;
+  border-color: #e7828a !important;
+}
+.driver-shell [data-sign-out] {
+  color: #fff !important;
+  background: #bd4c57 !important;
+  border-color: #e7828a !important;
+}
+.offer-counter {
+  min-width: 6.2rem;
+  border-radius: .75rem;
+  background: #202126;
+  border: 2px solid #ffd800;
+  color: #fff;
+}
+.offer-counter strong { display: block; color: #ffd800; font-size: 1.45rem; line-height: 1; }
+.offer-counter small { color: #fff; }
+.driver-accept-large {
+  color: #ffd800 !important;
+  background: #63ef8d !important;
+  border-color: #10251a !important;
+  text-shadow: 0 1px 0 #111218;
+}
+.driver-accept-large:hover,
+.driver-accept-large:focus-visible { color: #ffe96b !important; background: #86f4a6 !important; }
+.driver-counter-sheet button { font-size: 1.08rem; font-weight: 1000; }
+
+/* Selector Cliente/Conductor con apariencia de deslizador; conserva ambos destinos accesibles. */
+.mode-switch-app {
+  position: relative;
+  overflow: hidden !important;
+  isolation: isolate;
+}
+.mode-switch-app::before {
+  position: absolute;
+  z-index: 0;
+  top: .45rem;
+  bottom: .45rem;
+  left: .45rem;
+  width: calc(50% - .7rem);
+  content: "";
+  border-radius: .78rem;
+  background: #ffd800;
+  box-shadow: 0 .25rem .7rem rgba(255,216,0,.24);
+  transition: left .24s ease, background .24s ease;
+}
+.mode-switch-app.is-driver::before { left: calc(50% + .25rem); }
+.mode-switch-tab,
+.mode-switch-app.is-customer .is-customer-tab,
+.mode-switch-app.is-driver .is-driver-tab {
+  position: relative;
+  z-index: 1;
+  transform: none !important;
+  color: #fff !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.mode-switch-app.is-customer .is-customer-tab,
+.mode-switch-app.is-driver .is-driver-tab { color: #111218 !important; }
+.mode-switch-tab:hover,
+.mode-switch-tab:focus-visible { color: #111218 !important; background: rgba(255,255,255,.12) !important; }
+
+@media (max-width: 760px) {
+  .driver-gps-diagnostic { padding-inline: .5rem; }
+  .driver-gps-diagnostic .button { min-height: 2.8rem; }
+  .driver-route-audio-actions .safety-assist-button { flex: 1 1 8rem; }
+  .customer-history-primary-action { padding-inline: .55rem; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form { padding-inline: 0 !important; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .route-entry { border-radius: 0 !important; padding-inline: .78rem !important; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .ride-map-stage { border-radius: 0 !important; }
+}

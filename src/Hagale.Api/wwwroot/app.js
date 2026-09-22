@@ -925,6 +925,28 @@ function renderDriverAlertButton(extraClass = "") {
   return `<button class="button ${isEnabled ? "button-secondary" : "button-primary"} small driver-alert-toggle ${escapeHtml(extraClass)}" type="button" data-toggle-driver-alerts aria-pressed="${isEnabled}" title="Activar o desactivar avisos de nuevos servicios">${labelText}</button>`;
 }
 
+function openSafetyAssist(context = "customer") {
+  const contacts = state.emergencyContacts || [];
+  const isCustomer = context === "customer";
+  const confirmed = window.confirm("¿Quieres abrir el protocolo de seguridad? No se llamará a la policía ni se compartirá tu ubicación automáticamente.");
+  if (!confirmed) return;
+  if (!contacts.length) {
+    if (isCustomer) {
+      state.customerNav = "safety";
+      sessionStorage.setItem(customerNavKey, state.customerNav);
+    } else {
+      state.driverNav = "settings";
+    }
+    renderDashboard();
+    showNotice("Agrega al menos un contacto de confianza antes de preparar una alerta.", true);
+    return;
+  }
+  showNotice("Protocolo de seguridad listo: confirma cualquier contacto o ubicación antes de enviarla. No se realiza ninguna llamada automática.");
+}
+
+function renderSafetyAssistButton(context) {
+  return `<button class="button safety-assist-button small" type="button" data-open-safety-assist="${context}" title="Abrir protocolo de seguridad">⚠ Seguridad</button>`;
+}
 function renderDriverAlertControl() {
   const support = getDriverAlertSupport();
   const isEnabled = state.driverSoundAlertsEnabled || state.driverVoiceAlertsEnabled || state.driverSystemAlertsEnabled;
@@ -1473,9 +1495,9 @@ function renderDriverMap(driver) {
         <p>${help}</p>
         <button class="button button-secondary small" type="button" data-update-dispatch-location ${isReadyForDispatch ? "" : "disabled"}>${hasDriverPosition ? "Actualizar GPS" : "Activar GPS"}</button>
       </div>
-      <div class="gps-diagnostic-row" aria-live="polite">
-        <span data-gps-diagnostic-status>Si no aparece tu punto, comprueba el permiso de ubicación.</span>
+      <div class="gps-diagnostic-row driver-gps-diagnostic" aria-live="polite">
         <button class="button button-quiet small" type="button" data-diagnose-gps>Comprobar GPS</button>
+        <span data-gps-diagnostic-status>Comprueba el permiso solo si tu punto no aparece.</span>
       </div>
       <p class="map-privacy-note">El seguimiento comienza únicamente cuando tú pulsas “Activar GPS”. Al desconectarte, se detiene y la ubicación se elimina del despacho.</p>
     </article>`;
@@ -1636,6 +1658,18 @@ function updateCustomerRideQuoteUi() {
   if (quoteElement) quoteElement.innerHTML = renderCustomerRideQuote();
 }
 
+function applyDynamicFareRecommendation() {
+  const selectedFareMode = app.querySelector("#ride-request-form input[name='fareMode']:checked")?.value;
+  const recommendedFare = Number(state.customerRideQuote?.recommendedFareCop);
+  const priceInput = app.querySelector("#ride-proposed-price");
+  const hint = app.querySelector("#minimum-fare-hint");
+  if (selectedFareMode !== "DynamicFare" || !priceInput || !Number.isFinite(recommendedFare) || recommendedFare <= 0) return;
+
+  priceInput.value = String(Math.round(recommendedFare));
+  saveCustomerRideDraft({ proposedPriceCop: priceInput.value, fareMode: "DynamicFare" });
+  if (hint) hint.textContent = `Tarifa dinámica sugerida por la ruta: ${formatCop(recommendedFare)}. Puedes cambiarla si prefieres enviar otra oferta.`;
+}
+
 async function refreshCustomerRideQuote() {
   const version = ++state.customerRideQuoteVersion;
   const pricingRule = getSelectedRidePricingRule();
@@ -1670,6 +1704,7 @@ async function refreshCustomerRideQuote() {
     if (version !== state.customerRideQuoteVersion) return;
     state.customerRideQuote = { ...quote, route };
     updateCustomerRideQuoteUi();
+    applyDynamicFareRecommendation();
   } catch {
     if (version !== state.customerRideQuoteVersion) return;
     state.customerRideQuote = null;
@@ -2205,7 +2240,7 @@ function buildCustomerRideVoiceMessage(rideRequest, status) {
   if (rideStatus === "Accepted") return `Conductor asignado: ${driverName}.`;
   if (rideStatus === "DriverArrived") return "Ya llegué a recogida.";
   if (rideStatus === "InProgress") return "Viaje iniciado.";
-  if (rideStatus === "Completed") return "Viaje finalizado.";
+  if (rideStatus === "Completed") return "Su viaje ha sido finalizado.";
   return "";
 }
 
@@ -3426,28 +3461,27 @@ function renderCustomerPanelContent(panel, profile, driver, accountSummary, isAd
 
 function renderDriverWorkspacePanel(driver, hasActiveJourney) {
   const activePanel = state.driverNav || "requests";
-  const quickActions = renderDriverQuickActions(activePanel, hasActiveJourney);
   if (activePanel === "account") {
     return "";
   }
 
   if (activePanel === "dispatch") {
-    return `${quickActions}${renderDriverMap(driver)}${renderDriverDispatchPanel(driver)}`;
+    return `${renderDriverMap(driver)}${renderDriverDispatchPanel(driver)}`;
   }
 
   if (activePanel === "performance") {
-    return `${quickActions}${renderDriverPerformancePanel()}`;
+    return renderDriverPerformancePanel();
   }
 
   if (activePanel === "wallet") {
-    return `${quickActions}${renderDriverWalletPanel()}`;
+    return renderDriverWalletPanel();
   }
 
   if (activePanel === "settings") {
-    return `${quickActions}${renderDriverPanel(driver, true)}${renderSafetyPanel("conductor")}`;
+    return `${renderDriverPanel(driver, true)}${renderSafetyPanel("conductor")}`;
   }
 
-  return `${quickActions}${renderDriverMap(driver)}${renderDriverRideRequestsPanel()}`;
+  return `${renderDriverMap(driver)}${renderDriverRideRequestsPanel()}`;
 }
 
 function getDriverLiveModeLabel(driver) {
@@ -3959,8 +3993,7 @@ function renderDriverRideRequestsPanel() {
           <div class="route-connector" aria-hidden="true"></div>
           <div class="route-stop route-stop-destination"><span>DESTINO · B</span><strong>${escapeHtml(currentRequest.destinationAddress)}</strong></div>
         </div>
-        <div class="driver-route-audio-actions"><button class="button driver-repeat-route" type="button" data-repeat-driver-route="${escapeHtml(currentRequest.id)}">🔊 Repetir dirección</button></div>
-        <div class="driver-trip-summary"><div><span>Servicio</span><strong>${escapeHtml(label[currentRequest.serviceType] || currentRequest.serviceType)}</strong></div><div><span>Ciudad</span><strong>${escapeHtml(currentRequest.operatingCityCode)}</strong></div><div><span>Oferta</span><strong>${formatCop(currentRequest.proposedPriceCop)}</strong></div><div><span>Pago</span><strong>${escapeHtml(getRidePaymentMethodLabel(currentRequest))}</strong></div><div><span>Tarifa</span><strong>${escapeHtml(getRideFareModeLabel(currentRequest))}</strong></div></div>
+        <div class="driver-route-audio-actions"><button class="button driver-repeat-route" type="button" data-repeat-driver-route="${escapeHtml(currentRequest.id)}">🔊 Repetir dirección</button>${renderSafetyAssistButton("driver")}</div>
         ${journeyGuidance}
         ${renderJourneyTimeline(currentRequest)}
         ${renderWaitingInformation(currentRequest, null, "driver")}
@@ -4007,20 +4040,11 @@ function renderDriverOfferSheet(offer) {
   return `
     <section class="driver-request-sheet" aria-label="Detalle de la solicitud seleccionada">
       <div class="driver-sheet-heading"><div><span class="eyebrow">Solicitud seleccionada</span><h3><span>Gana</span><strong>${formatCop(offer.proposedPriceCop)}</strong></h3><p>${formatPickupProximity(offer.pickupDistanceKilometers)} · ${escapeHtml(getRidePaymentMethodLabel(offer))}</p></div><button class="button button-quiet" type="button" data-close-driver-offer>Cerrar</button></div>
-      <div class="driver-sheet-metrics" aria-label="Resumen de distancias de la solicitud">
-        <div><span>Hasta A</span><strong>${formatPickupProximity(offer.pickupDistanceKilometers)}</strong></div>
-        <div><span>Trayecto A-B</span><strong>${formatDistance(offer.tripDistanceKilometers)}</strong></div>
-        <div><span>Total directo</span><strong>${formatDistance(offer.totalDistanceKilometers)}</strong></div>
-        <div><span>Tiempo estimado</span><strong>${formatDriverOfferDuration(offer)}</strong></div>
-      </div>
       <div class="driver-offer-route-summary" aria-label="Direcciones completas">
         <div><span class="driver-offer-route-label is-pickup">A · Recogida</span><strong>${formatDriverOfferAddress(offer.pickupAddress)}</strong></div>
         <div><span class="driver-offer-route-label is-destination">B · Entrega</span><strong>${formatDriverOfferAddress(offer.destinationAddress)}</strong></div>
       </div>
       <div class="driver-offer-classification is-${classification.tone}" aria-label="Clasificación de la oferta">${classification.label}</div>
-      ${renderDriverPriceReference(offer)}
-      ${renderRidePreferenceTags(offer)}
-      <p class="driver-sheet-note">Revisa la tarifa y responde debajo. Al aceptar, esta solicitud pasa al servicio activo y aparecerán el mapa y las direcciones completas de recogida y destino.</p>
       <div class="driver-offer-action-stack">
         <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}">Aceptar por ${formatCop(offer.proposedPriceCop)}</button>
         <form class="driver-counter-sheet" data-counter-offer-ride="${offer.id}"><label for="counter-sheet-${offer.id}">Enviar oferta alternativa</label><div><input id="counter-sheet-${offer.id}" name="priceCop" type="number" min="${offer.proposedPriceCop}" step="1" value="${offer.proposedPriceCop}" required><button class="button button-secondary" type="submit">Enviar oferta</button></div></form>
@@ -4318,16 +4342,15 @@ function renderCustomerRideTrackingPanel() {
   return `
     <article id="customer-ride-tracking" class="card customer-tracking-card" data-reveal>
       <div class="customer-tracking-brand"><img class="hagale-logo-image tracking-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"><small>Seguimiento del servicio</small></div>
-      <div class="section-title"><div><span class="eyebrow">Servicio activo</span><h2>${statusLabel}</h2><p class="muted" data-customer-tracking-status>${customerTrackingMessage(rideRequest, tracking)}</p></div>${statusBadge(status)}</div>
+      <div class="section-title"><div><span class="eyebrow">Servicio activo</span><h2>${statusLabel}</h2><p class="muted" data-customer-tracking-status>${customerTrackingMessage(rideRequest, tracking)}</p></div></div>
       ${renderCustomerStageAlert(status)}
       ${renderAssignedDriverSummary(tracking?.driver, status)}
       ${renderPrivateCommunicationCard(rideRequest)}
-      ${renderCustomerTripGlance(rideRequest, tracking)}
       <div class="customer-tracking-route"><div><span class="route-letter route-letter-a">A</span><p><small>Recogida</small><strong>${escapeHtml(rideRequest.pickupAddress)}</strong></p></div><div><span class="route-letter route-letter-b">B</span><p><small>Destino</small><strong>${escapeHtml(rideRequest.destinationAddress)}</strong></p></div></div>
       <div class="customer-tracking-map-frame"><div class="customer-tracking-map driver-map-canvas" data-customer-ride-map aria-label="Mapa del servicio activo">${hasDriverLocation ? "" : '<div class="customer-tracking-map-wait"><strong>Esperando GPS del conductor</strong><span>La moto aparecerá aquí cuando el conductor active la ubicación para este servicio.</span></div>'}</div></div>
       ${renderWaitingInformation(rideRequest, tracking, "customer")}
       ${renderJourneyTimeline({ ...rideRequest, ...tracking })}
-      <div class="customer-tracking-actions"><button class="button button-secondary small" type="button" data-refresh-customer-tracking>Actualizar mapa</button><button class="button button-secondary small" type="button" data-test-customer-voice>🔊 Probar voz</button><span>${hasDriverLocation ? "Se muestra la última ubicación compartida." : "No se muestra ninguna ubicación hasta que el conductor la comparta."}</span></div>
+      <div class="customer-tracking-actions"><button class="button button-secondary small" type="button" data-refresh-customer-tracking>Actualizar mapa</button><button class="button button-secondary small" type="button" data-test-customer-voice>🔊 Probar voz</button>${renderSafetyAssistButton("customer")}<span>${hasDriverLocation ? "Se muestra la última ubicación compartida." : "No se muestra ninguna ubicación hasta que el conductor la comparta."}</span></div>
       <p class="customer-tracking-privacy">La ruta amarilla/negra se calcula por calles entre la última ubicación compartida, A y B. Para indicaciones giro a giro, abre la navegación del teléfono.</p>
     </article>`;
 }
@@ -4405,8 +4428,8 @@ function renderCustomerRideHistoryPanel() {
     <article id="customer-history" class="card customer-history-card" data-reveal>
       <div class="section-title">
         <div><span class="eyebrow">Cliente · historial</span><h2>Mis viajes y solicitudes</h2><p class="muted">Separado del panel para pedir moto. Aquí revisas servicios activos, cerrados, cancelados y contraofertas.</p></div>
-        <button class="button button-primary small" type="button" data-customer-nav="ride">Pedir otra moto</button>
       </div>
+      <div class="customer-history-primary-action"><button class="button button-primary" type="button" data-customer-nav="ride">Pedir moto</button></div>
       <div class="customer-history-metrics">
         <div><strong>${rideRequests.length}</strong><span>Total solicitudes</span></div>
         <div><strong>${completedCount}</strong><span>Finalizadas</span></div>
@@ -4517,12 +4540,8 @@ function renderCustomerRideLocationsStep() {
           <label class="sub-field-label" for="ride-pickup-neighborhood">Barrio</label>
           <input id="ride-pickup-neighborhood" name="pickupNeighborhood" value="${escapeHtml(draft.pickupNeighborhood)}" maxlength="120" autocomplete="address-level3" placeholder="Ej.: Cabecera">
           <div class="location-actions">
-            <button class="location-button" type="button" data-capture-pickup-location>Usar GPS</button>
-            <button class="location-button" type="button" data-open-ride-map="pickup">Elegir en el mapa</button>
-          </div>
-          <div class="gps-diagnostic-row customer-gps-diagnostic" aria-live="polite">
-            <span data-gps-diagnostic-status>El GPS es opcional; también puedes marcar A en el mapa.</span>
-            <button class="button button-quiet small" type="button" data-diagnose-gps>Comprobar GPS</button>
+            <button class="location-button" type="button" data-capture-pickup-location>Mi ubicación</button>
+            <button class="location-button" type="button" data-open-ride-map="pickup">Marcar en mapa</button>
           </div>
           <span id="pickup-location-status" class="small-text muted">${state.pendingPickupLocation ? "Punto A listo para esta solicitud." : "Escribe la dirección o toca el mapa para ubicar A."}</span>
         </div>
@@ -4532,8 +4551,8 @@ function renderCustomerRideLocationsStep() {
           <label class="sub-field-label" for="ride-destination-neighborhood">Barrio del destino</label>
           <input id="ride-destination-neighborhood" name="destinationNeighborhood" value="${escapeHtml(draft.destinationNeighborhood)}" maxlength="120" autocomplete="address-level3" placeholder="Ej.: Provenza">
           <div class="location-actions">
-            <button class="location-button" type="button" data-capture-destination-location>Usar GPS</button>
-            <button class="location-button" type="button" data-open-ride-map="destination">Elegir en el mapa</button>
+            <button class="location-button" type="button" data-capture-destination-location>Mi ubicación</button>
+            <button class="location-button" type="button" data-open-ride-map="destination">Marcar en mapa</button>
           </div>
           <span id="destination-location-status" class="small-text muted">${state.pendingDestinationLocation ? "Punto B listo para esta solicitud." : "Escribe la dirección o toca el mapa para ubicar B."}</span>
         </div>
@@ -4692,7 +4711,6 @@ function renderRideRequestPanel() {
       <span class="eyebrow">HÁGALE · solicitar moto</span>
       <h2>${stageTitle}</h2>
       <p class="muted">${stageDescription}</p>
-      ${!openRequest && state.customerRideStep === "locations" ? renderCustomerLaunchOfferPanel() : ""}
       ${requestForm}
       <div class="customer-request-footer"><button class="button button-secondary small" type="button" data-customer-nav="history">Ver historial completo</button><span>El historial está separado para que pedir una moto sea un panel limpio.</span></div>
     </article>`;
@@ -5260,7 +5278,12 @@ function bindDriverEvents() {
     saveCustomerRideDraft({ proposedPriceCop: ridePriceInput.value });
   });
   app.querySelectorAll("#ride-request-form input[name='paymentMethod'], #ride-request-form input[name='fareMode']").forEach(input => {
-    input.addEventListener("change", () => saveCustomerRideDraft({ [input.name]: input.value }));
+    input.addEventListener("change", () => {
+      saveCustomerRideDraft({ [input.name]: input.value });
+      if (input.name === "fareMode" && input.value === "DynamicFare") {
+        applyDynamicFareRecommendation();
+      }
+    });
   });
   app.querySelectorAll("[data-cancel-ride]").forEach(button => {
     button.addEventListener("click", () => cancelRideRequest(button.dataset.cancelRide));
@@ -5273,6 +5296,9 @@ function bindDriverEvents() {
   });
   app.querySelectorAll("[data-test-customer-voice]").forEach(button => {
     button.addEventListener("click", testCustomerVoiceAlerts);
+  });
+  app.querySelectorAll("[data-open-safety-assist]").forEach(button => {
+    button.addEventListener("click", () => openSafetyAssist(button.dataset.openSafetyAssist));
   });
   app.querySelectorAll("[data-counter-offer-ride]").forEach(element => {
     if (element.matches("form")) element.addEventListener("submit", event => makeCounterOffer(event, element.dataset.counterOfferRide));
@@ -5631,7 +5657,7 @@ async function updateRideJourney(action, rideRequestId) {
     "en-route": "Marcaste que vas en camino.",
     arrived: "Confirmaste que llegaste a la recogida.",
     start: "Viaje iniciado.",
-    complete: "Viaje finalizado. Ya estás disponible nuevamente."
+    complete: "Su viaje ha sido finalizado. Ya estás disponible nuevamente."
   };
   const path = pathByAction[action];
   if (!path) return;
@@ -5644,6 +5670,9 @@ async function updateRideJourney(action, rideRequestId) {
     });
     await refreshDriverDispatch();
     renderDashboard();
+    if (action === "complete") {
+      announceRideNotification("Su viaje ha sido finalizado.", { forceVoice: true, forceSound: true });
+    }
     showNotice(messageByAction[action]);
   } catch (error) { showNotice(error.message, true); }
 }
