@@ -24,7 +24,7 @@ function getDefaultCustomerRideDraft() {
     pricingRuleKey: "",
     proposedPriceCop: "",
     paymentMethod: "Cash",
-    fareMode: "PassengerOffer"
+    fareMode: "DynamicFare"
   };
 }
 
@@ -3441,44 +3441,51 @@ function renderCustomerPanelContent(panel, profile, driver, accountSummary, isAd
   }
 
   if (panel === "driver") {
-    return renderDriverPanel(driver, false);
+    return `${renderPanelBackButton("Pedir moto")}${renderDriverPanel(driver, false)}`;
   }
 
   if (panel === "admin" && isAdministrator) {
-    return renderAdminPanel();
+    return `${renderPanelBackButton("Pedir moto")}${renderAdminPanel()}`;
   }
 
   if (panel === "profile") {
-    return `${accountSummary}${renderProfilePanel(profile)}`;
+    return `${renderPanelBackButton("Pedir moto")}${accountSummary}${renderProfilePanel(profile)}`;
   }
 
   if (panel === "safety") {
-    return renderSafetyPanel("cliente");
+    return `${renderPanelBackButton("Pedir moto")}${renderSafetyPanel("cliente")}`;
   }
 
   return renderRideRequestPanel();
 }
 
+function renderPanelBackButton(label = "Volver") {
+  return `<div class="panel-back-row"><button class="button button-quiet panel-back-button" type="button" data-panel-back>← ${escapeHtml(label)}</button></div>`;
+}
+
 function renderDriverWorkspacePanel(driver, hasActiveJourney) {
   const activePanel = state.driverNav || "requests";
+  const withBack = content => activePanel === "requests"
+    ? content
+    : `${renderPanelBackButton("Solicitudes")}${content}`;
   if (activePanel === "account") {
-    return "";
+    return withBack(`${renderDriverPanel(driver, true)}${renderSafetyPanel("conductor")}`);
   }
 
   if (activePanel === "dispatch") {
-    return `${renderDriverMap(driver)}${renderDriverDispatchPanel(driver)}`;
+    return withBack(`${renderDriverMap(driver)}${renderDriverDispatchPanel(driver)}`);
   }
 
   if (activePanel === "performance") {
-    return renderDriverPerformancePanel();
+    return withBack(renderDriverPerformancePanel());
   }
 
   if (activePanel === "wallet") {
-    return renderDriverWalletPanel();
+    return withBack(renderDriverWalletPanel());
   }
 
   if (activePanel === "settings") {
-    return `${renderDriverPanel(driver, true)}${renderSafetyPanel("conductor")}`;
+    return withBack(`${renderDriverPanel(driver, true)}${renderSafetyPanel("conductor")}`);
   }
 
   return `${renderDriverMap(driver)}${renderDriverRideRequestsPanel()}`;
@@ -3620,6 +3627,7 @@ function renderDashboard() {
     }
     app.querySelector("#admin-center")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }));
+  app.querySelectorAll("[data-panel-back]").forEach(button => button.addEventListener("click", goBackPanel));
   const refreshProfile = app.querySelector("[data-refresh]");
   if (refreshProfile) refreshProfile.addEventListener("click", loadDashboard);
   const profileForm = app.querySelector("#profile-form");
@@ -4037,6 +4045,16 @@ function renderDriverRideRequestsPanel() {
 
 function renderDriverOfferSheet(offer) {
   const classification = getDriverOfferClassification(offer);
+  const requestedFare = Number(offer?.proposedPriceCop) || 0;
+  const distanceReferenceFare = Number(offer?.directDistanceReferenceFareCop) || 0;
+  const counterOfferBase = Math.max(requestedFare, distanceReferenceFare);
+  const counterOfferSuggestions = [500, 1000, 1500]
+    .map(increment => counterOfferBase + increment)
+    .filter(price => Number.isFinite(price) && price > counterOfferBase);
+  const counterOfferButtons = counterOfferSuggestions.map(price => `
+    <button class="button driver-quick-counter-offer" type="button" data-quick-counter-offer="${escapeHtml(offer.id)}" data-counter-offer-price="${price}">
+      <span>Ofrecer</span><strong>${formatCop(price)}</strong>
+    </button>`).join("");
   return `
     <section class="driver-request-sheet" aria-label="Detalle de la solicitud seleccionada">
       <div class="driver-sheet-heading"><div><span class="eyebrow">Solicitud seleccionada</span><h3><span>Gana</span><strong>${formatCop(offer.proposedPriceCop)}</strong></h3><p>${formatPickupProximity(offer.pickupDistanceKilometers)} · ${escapeHtml(getRidePaymentMethodLabel(offer))}</p></div><button class="button button-quiet" type="button" data-close-driver-offer>Cerrar</button></div>
@@ -4046,8 +4064,11 @@ function renderDriverOfferSheet(offer) {
       </div>
       <div class="driver-offer-classification is-${classification.tone}" aria-label="Clasificación de la oferta">${classification.label}</div>
       <div class="driver-offer-action-stack">
-        <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}">Aceptar por ${formatCop(offer.proposedPriceCop)}</button>
-        <form class="driver-counter-sheet" data-counter-offer-ride="${offer.id}"><label for="counter-sheet-${offer.id}">Enviar oferta alternativa</label><div><input id="counter-sheet-${offer.id}" name="priceCop" type="number" min="${offer.proposedPriceCop}" step="1" value="${offer.proposedPriceCop}" required><button class="button button-secondary" type="submit">Enviar oferta</button></div></form>
+        <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}"><span>Aceptar por</span><strong>${formatCop(offer.proposedPriceCop)}</strong></button>
+        <div class="driver-counter-sheet" aria-label="Contraofertas rápidas">
+          <label>Contraofertas rápidas · suben de $500 en $500</label>
+          <div class="driver-counter-options">${counterOfferButtons}</div>
+        </div>
       </div>
     </section>`;
 }
@@ -4342,7 +4363,7 @@ function renderCustomerRideTrackingPanel() {
   return `
     <article id="customer-ride-tracking" class="card customer-tracking-card" data-reveal>
       <div class="customer-tracking-brand"><img class="hagale-logo-image tracking-logo-image" src="/assets/hagale-logo-yellow.png" alt="HÁGALE"><small>Seguimiento del servicio</small></div>
-      <div class="section-title"><div><span class="eyebrow">Servicio activo</span><h2>${statusLabel}</h2><p class="muted" data-customer-tracking-status>${customerTrackingMessage(rideRequest, tracking)}</p></div></div>
+      <div class="section-title"><div><span class="eyebrow">Servicio activo</span><h2>${statusLabel}</h2><p class="muted" data-customer-tracking-status>${customerTrackingMessage(rideRequest, tracking)}</p></div>${renderPanelBackButton("Historial")}</div>
       ${renderCustomerStageAlert(status)}
       ${renderAssignedDriverSummary(tracking?.driver, status)}
       ${renderPrivateCommunicationCard(rideRequest)}
@@ -4428,6 +4449,7 @@ function renderCustomerRideHistoryPanel() {
     <article id="customer-history" class="card customer-history-card" data-reveal>
       <div class="section-title">
         <div><span class="eyebrow">Cliente · historial</span><h2>Mis viajes y solicitudes</h2><p class="muted">Separado del panel para pedir moto. Aquí revisas servicios activos, cerrados, cancelados y contraofertas.</p></div>
+        ${renderPanelBackButton("Pedir moto")}
       </div>
       <div class="customer-history-primary-action"><button class="button button-primary" type="button" data-customer-nav="ride">Pedir moto</button></div>
       <div class="customer-history-metrics">
@@ -4528,6 +4550,7 @@ function renderCustomerRideLocationsStep() {
   return `
     <section class="customer-ride-stage customer-ride-stage-locations">
       ${renderCustomerRideStepIndicator("locations")}
+      ${renderPanelBackButton("Historial")}
       <div class="customer-ride-stage-heading">
         <span class="eyebrow">Pantalla 1 · ruta</span>
         <h3>¿De dónde y hacia dónde? ${renderHelpDot("Primero guarda A y B. Después revisas precio, pago y tipo de tarifa.")}</h3>
@@ -4590,11 +4613,12 @@ function renderCustomerRideDetailsStep(activePricingRules) {
     return `<option value="${escapeHtml(value)}" data-minimum-fare="${rule.minimumFareCop}" ${value === selectedRuleValue ? "selected" : ""}>${escapeHtml(rule.cityCode)} · ${escapeHtml(label[rule.serviceType] || rule.serviceType)} · mínimo ${formatCop(rule.minimumFareCop)}</option>`;
   }).join("");
   const paymentMethod = draft.paymentMethod || "Cash";
-  const fareMode = draft.fareMode || "PassengerOffer";
+  const fareMode = draft.fareMode || "DynamicFare";
 
   return `
     <section class="customer-ride-stage customer-ride-stage-details">
       ${renderCustomerRideStepIndicator("details")}
+      ${renderPanelBackButton("Direcciones")}
       <div class="customer-ride-stage-heading">
         <span class="eyebrow">Pantalla 2 · propuesta</span>
         <h3>Define cómo quieres viajar ${renderHelpDot("La tarifa puede ser mínima, recomendada por distancia o una oferta mayor para atraer conductores.")}</h3>
@@ -4998,6 +5022,34 @@ function navigateDriverPanel(destination) {
   app.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function goBackPanel() {
+  if (state.activeMode === "Driver") {
+    if ((state.driverNav || "requests") !== "requests") {
+      navigateDriverPanel("requests");
+    } else {
+      setActiveMode("Customer");
+    }
+    return;
+  }
+
+  if (state.customerNav === "ride" && state.customerRideStep === "details") {
+    setCustomerRideStep("locations");
+    return;
+  }
+  const previousPanel = {
+    tracking: "history",
+    history: "ride",
+    profile: "ride",
+    safety: "ride",
+    driver: "ride",
+    admin: "ride"
+  }[state.customerNav] || "ride";
+  state.customerNav = previousPanel;
+  sessionStorage.setItem(customerNavKey, previousPanel);
+  renderDashboard();
+  app.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function renderAdminPanel() {
   const page = state.adminApplications;
   const items = page?.items || [];
@@ -5303,6 +5355,9 @@ function bindDriverEvents() {
   app.querySelectorAll("[data-counter-offer-ride]").forEach(element => {
     if (element.matches("form")) element.addEventListener("submit", event => makeCounterOffer(event, element.dataset.counterOfferRide));
   });
+  app.querySelectorAll("[data-quick-counter-offer]").forEach(button => {
+    button.addEventListener("click", () => sendCounterOffer(button.dataset.quickCounterOffer, button.dataset.counterOfferPrice));
+  });
   app.querySelectorAll("[data-counter-offer-decision]").forEach(button => {
     button.addEventListener("click", () => decideCounterOffer(button.dataset.counterOfferRide, button.dataset.counterOfferDecision));
   });
@@ -5533,7 +5588,7 @@ async function createRideRequest(event) {
       pricingRuleKey: data.pricingRuleKey,
       proposedPriceCop: String(data.proposedPriceCop),
       paymentMethod: data.paymentMethod || "Cash",
-      fareMode: data.fareMode || "PassengerOffer"
+      fareMode: data.fareMode || "DynamicFare"
     });
     data.pickupAddress = buildAddressWithNeighborhood(draft.pickupAddress, draft.pickupNeighborhood);
     data.destinationAddress = buildAddressWithNeighborhood(draft.destinationAddress, draft.destinationNeighborhood);
@@ -5574,7 +5629,10 @@ function syncSelectedPricingRule(event) {
   priceInput.min = String(minimumFare);
   priceInput.value = String(minimumFare);
   saveCustomerRideDraft({ proposedPriceCop: String(minimumFare) });
-  hint.textContent = `Tarifa mínima vigente: ${formatCop(minimumFare)}. Las ubicaciones son opcionales; si las compartes, el despacho podrá mostrar los puntos A y B y ordenar por cercanía.`;
+  const dynamicFareSelected = app.querySelector("#ride-request-form input[name='fareMode']:checked")?.value === "DynamicFare";
+  hint.textContent = dynamicFareSelected
+    ? "Calculando la tarifa dinámica con la ruta real…"
+    : `Tarifa mínima vigente: ${formatCop(minimumFare)}. Las ubicaciones son opcionales; si las compartes, el despacho podrá mostrar los puntos A y B y ordenar por cercanía.`;
   void refreshCustomerRideQuote();
 }
 
@@ -5612,20 +5670,29 @@ async function acceptRideRequest(rideRequestId, source = "button") {
   } catch (error) { showNotice(error.message, true); }
 }
 
-async function makeCounterOffer(event, rideRequestId) {
-  event.preventDefault();
+async function sendCounterOffer(rideRequestId, priceCop) {
+  const normalizedPrice = Math.round(Number(priceCop));
+  if (!Number.isFinite(normalizedPrice) || normalizedPrice <= 0) {
+    showNotice("El valor de la contraoferta no es válido.", true);
+    return;
+  }
   try {
-    const form = new FormData(event.currentTarget);
     state.driverCurrentRideRequest = await request(`/driver/ride-requests/${rideRequestId}/counter-offer`, {
       method: "POST",
-      data: { priceCop: Number(form.get("priceCop")) }
+      data: { priceCop: normalizedPrice }
     });
     state.selectedDriverOfferId = null;
     state.driverRideOffers = [];
     state.application = await request("/driver-application/me");
     renderDashboard();
-    showNotice("Contraoferta enviada. Espera la decisión del pasajero.");
+    showNotice(`Contraoferta de ${formatCop(normalizedPrice)} enviada. Espera la decisión del pasajero.`);
   } catch (error) { showNotice(error.message, true); }
+}
+
+async function makeCounterOffer(event, rideRequestId) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  await sendCounterOffer(rideRequestId, form.get("priceCop"));
 }
 
 async function decideCounterOffer(rideRequestId, decision) {

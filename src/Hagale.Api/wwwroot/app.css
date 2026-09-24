@@ -7550,3 +7550,47 @@ body.account-splash-active { overflow: hidden !important; }
   .customer-panel-stage[data-active-customer-panel="ride"] .route-entry { border-radius: 0 !important; padding-inline: .78rem !important; }
   .customer-panel-stage[data-active-customer-panel="ride"] .ride-map-stage { border-radius: 0 !important; }
 }
+
+/* Tarifa y navegación: contraste alto en móvil y salida clara de cada panel. */
+.driver-accept-large {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  color: #050506 !important;
+  background: #78ef9b !important;
+  border-color: #0c2b18 !important;
+  text-shadow: none !important;
+}
+.driver-accept-large span { font-size: .9em; font-weight: 850; }
+.driver-accept-large strong { color: #050506 !important; font-size: 1.22em; font-weight: 1000; }
+.driver-accept-large:hover,
+.driver-accept-large:focus-visible { color: #050506 !important; background: #a0f7b8 !important; }
+.driver-counter-sheet { gap: .55rem; }
+.driver-counter-sheet > label { display: block; color: #fff !important; font-size: .9rem; font-weight: 900; text-align: left; }
+.driver-counter-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; }
+.driver-quick-counter-offer {
+  display: grid;
+  gap: .08rem;
+  min-height: 3.55rem;
+  padding: .45rem .35rem;
+  color: #050506 !important;
+  background: #ffd800 !important;
+  border: 2px solid #111218 !important;
+  font-weight: 900;
+}
+.driver-quick-counter-offer span { font-size: .72rem; }
+.driver-quick-counter-offer strong { font-size: 1.05rem; line-height: 1.05; }
+.driver-quick-counter-offer:hover,
+.driver-quick-counter-offer:focus-visible { background: #ffec72 !important; transform: translateY(-.08rem); }
+.panel-back-row { display: flex; justify-content: flex-start; width: 100%; margin: 0 0 .55rem; }
+.section-title > .panel-back-row { width: auto; flex: 0 0 auto; margin: 0; }
+.panel-back-button { min-height: 2.55rem; padding-inline: .85rem; border: 1px solid rgba(255,216,0,.75); color: #fff !important; background: #17181d !important; font-weight: 900; }
+.panel-back-button:hover,
+.panel-back-button:focus-visible { color: #050506 !important; background: #ffd800 !important; }
+.customer-ride-stage > .panel-back-row { margin-top: .55rem; }
+@media (max-width: 520px) {
+  .driver-counter-options { grid-template-columns: 1fr; }
+  .driver-quick-counter-offer { min-height: 3.1rem; grid-template-columns: auto 1fr; align-items: center; text-align: left; padding-inline: .75rem; }
+  .driver-quick-counter-offer strong { text-align: right; }
+}
