@@ -24,7 +24,7 @@ public sealed class LocationSearchController(HttpClient httpClient, IMemoryCache
         [FromQuery, StringLength(20)] string? cityCode,
         CancellationToken cancellationToken)
     {
-        var normalizedQuery = q.Trim();
+        var normalizedQuery = NormalizeQuery(q);
         if (normalizedQuery.Length < 4)
         {
             return BadRequest(new ProblemDetails { Detail = "Escribe una dirección más completa." });
@@ -44,59 +44,90 @@ public sealed class LocationSearchController(HttpClient httpClient, IMemoryCache
             return Ok(cached);
         }
 
-        var searchText = normalizedQuery + ", " + cityHint;
-        var providers = new[]
+        foreach (var searchText in BuildSearchQueries(normalizedQuery, cityHint))
         {
-            (Uri: $"{PhotonEndpoint}?lang=es&limit=3&q={Uri.EscapeDataString(searchText)}", Parser: "photon"),
-            (Uri: $"{NominatimEndpoint}?format=jsonv2&limit=3&countrycodes=co&addressdetails=0&q={Uri.EscapeDataString(searchText)}", Parser: "nominatim")
-        };
-
-        foreach (var provider in providers)
-        {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(8));
-            using var outboundRequest = new HttpRequestMessage(HttpMethod.Get, provider.Uri);
-            outboundRequest.Headers.UserAgent.ParseAdd("HAGALE/0.1 (+https://hagale-demo.onrender.com)");
-            outboundRequest.Headers.Accept.ParseAdd("application/json");
-
-            try
+            var providers = new[]
             {
-                using var response = await httpClient.SendAsync(outboundRequest, timeout.Token);
-                if (!response.IsSuccessStatusCode)
+                (Uri: $"{PhotonEndpoint}?lang=es&limit=3&q={Uri.EscapeDataString(searchText)}", Parser: "photon"),
+                (Uri: $"{NominatimEndpoint}?format=jsonv2&limit=3&countrycodes=co&addressdetails=0&q={Uri.EscapeDataString(searchText)}", Parser: "nominatim")
+            };
+
+            foreach (var provider in providers)
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(8));
+                using var outboundRequest = new HttpRequestMessage(HttpMethod.Get, provider.Uri);
+                outboundRequest.Headers.UserAgent.ParseAdd("HAGALE/0.1 (+https://hagale-demo.onrender.com)");
+                outboundRequest.Headers.Accept.ParseAdd("application/json");
+
+                try
                 {
-                    continue;
-                }
+                    using var response = await httpClient.SendAsync(outboundRequest, timeout.Token);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        continue;
+                    }
 
-                await using var responseStream = await response.Content.ReadAsStreamAsync(timeout.Token);
-                using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: timeout.Token);
-                var results = provider.Parser == "photon"
-                    ? ParsePhotonResults(document.RootElement, normalizedQuery)
-                    : ParseNominatimResults(document.RootElement, normalizedQuery);
-                if (results.Length == 0)
+                    await using var responseStream = await response.Content.ReadAsStreamAsync(timeout.Token);
+                    using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: timeout.Token);
+                    var results = provider.Parser == "photon"
+                        ? ParsePhotonResults(document.RootElement, normalizedQuery)
+                        : ParseNominatimResults(document.RootElement, normalizedQuery);
+                    if (results.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    cache.Set(cacheKey, results, TimeSpan.FromMinutes(10));
+                    return Ok(results);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    continue;
+                    // Try the next provider/query before returning a user-facing error.
                 }
-
-                cache.Set(cacheKey, results, TimeSpan.FromMinutes(10));
-                return Ok(results);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                // Try the next provider before returning a user-facing error.
-            }
-            catch (HttpRequestException)
-            {
-                // Try the next provider before returning a user-facing error.
-            }
-            catch (JsonException)
-            {
-                // Try the next provider before returning a user-facing error.
+                catch (HttpRequestException)
+                {
+                    // Try the next provider/query before returning a user-facing error.
+                }
+                catch (JsonException)
+                {
+                    // Try the next provider/query before returning a user-facing error.
+                }
             }
         }
-
         return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails { Detail = "No se pudo ubicar la dirección ahora. Puedes elegir el punto en el mapa." });
     }
 
+    private static string NormalizeQuery(string value)
+    {
+        return value.Trim()
+            .Replace("N.º", " ", StringComparison.OrdinalIgnoreCase)
+            .Replace("N°", " ", StringComparison.OrdinalIgnoreCase)
+            .Replace("No.", " ", StringComparison.OrdinalIgnoreCase)
+            .Replace("#", " ", StringComparison.Ordinal)
+            .Replace("  ", " ", StringComparison.Ordinal)
+            .Trim();
+    }
+
+    private static IReadOnlyCollection<string> BuildSearchQueries(string query, string cityHint)
+    {
+        var withCity = $"{query}, {cityHint}";
+        var streetOnly = query.Split(',', 2)[0].Trim();
+        var withoutHouseNumber = System.Text.RegularExpressions.Regex
+            .Replace(streetOnly, @"\s+\d+[\s-]*\d*\s*$", string.Empty)
+            .Trim();
+
+        return new[]
+        {
+            withCity,
+            $"{streetOnly}, {cityHint}",
+            $"{withoutHouseNumber}, {cityHint}",
+            cityHint
+        }
+        .Where(value => value.Length >= 4)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    }
     private static LocationSearchResult[] ParsePhotonResults(JsonElement root, string fallbackName)
     {
         if (!root.TryGetProperty("features", out var features) || features.ValueKind != JsonValueKind.Array)
