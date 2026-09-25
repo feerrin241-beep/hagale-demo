@@ -84,18 +84,39 @@ public static class DatabaseInitializer
             await database.SaveChangesAsync(cancellationToken);
         }
 
-        if (!await database.PricingRules.AnyAsync(cancellationToken))
+        var motorcycleRule = await database.PricingRules
+            .SingleOrDefaultAsync(rule => rule.CityCode == "BUC" && rule.ServiceType == RideServiceType.Motorcycle, cancellationToken);
+
+        if (motorcycleRule is null)
         {
             database.PricingRules.Add(new PricingRule(
                 cityCode: "BUC",
                 serviceType: RideServiceType.Motorcycle,
                 minimumFareCop: 3_500,
-                baseFareCop: 0,
-                farePerKilometerCop: 0,
-                farePerMinuteCop: 0,
+                baseFareCop: 2_500,
+                farePerKilometerCop: 1_200,
+                farePerMinuteCop: 200,
                 isActive: true,
                 updatedAtUtc: timeProvider.GetUtcNow()));
             await database.SaveChangesAsync(cancellationToken);
         }
+        else if (motorcycleRule.BaseFareCop == 0
+                 && motorcycleRule.FarePerKilometerCop == 0
+                 && motorcycleRule.FarePerMinuteCop == 0)
+        {
+            motorcycleRule.Update(
+                minimumFareCop: motorcycleRule.MinimumFareCop,
+                baseFareCop: 2_500,
+                farePerKilometerCop: 1_200,
+                farePerMinuteCop: 200,
+                isActive: motorcycleRule.IsActive,
+                updatedAtUtc: timeProvider.GetUtcNow(),
+                includedWaitingMinutes: motorcycleRule.IncludedWaitingMinutes,
+                additionalWaitingFarePerMinuteCop: motorcycleRule.AdditionalWaitingFarePerMinuteCop,
+                fairOfferMinimumPercent: motorcycleRule.FairOfferMinimumPercent,
+                favorableOfferMinimumPercent: motorcycleRule.FavorableOfferMinimumPercent);
+            await database.SaveChangesAsync(cancellationToken);
+        }
     }
 }
+

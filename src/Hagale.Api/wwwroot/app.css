@@ -7710,6 +7710,31 @@ body.account-splash-active { overflow: hidden !important; }
   .driver-status-option strong { font-size: .78rem; }
 }
 
+/* HÁGALE · conductor: disponibilidad visible y cliente en panel separado */
+.driver-availability-focus {
+  width: 100%;
+  padding: .75rem;
+  background: #050506;
+  border-bottom: 1px solid #2a2b33;
+  box-sizing: border-box;
+}
+.driver-availability-focus .driver-status-control { width: 100%; max-width: none; }
+.driver-availability-focus .driver-status-slider {
+  min-height: 5.8rem;
+  border-radius: 1rem;
+}
+.driver-availability-focus .driver-status-option {
+  min-height: 5rem;
+  padding: .7rem .9rem;
+  justify-items: start;
+}
+.driver-availability-focus .driver-status-option strong {
+  font-size: clamp(1.25rem, 5.5vw, 1.9rem);
+  font-weight: 1000;
+}
+.driver-availability-focus .driver-status-option small,
+.driver-availability-focus .driver-status-detail { display: none; }
+.driver-bottom-nav .driver-mode-return { display: grid !important; }
 /* HÁGALE · viewport móvil completo 9:16 (capa final) */
 html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
 #app { width: 100%; max-width: 100%; min-height: 100svh; }
@@ -7740,3 +7765,4 @@ html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
   .customer-panel-stage[data-active-customer-panel="ride"] .ride-map-stage { width: 100% !important; max-width: none !important; }
   .customer-panel-shell, .dashboard-shell { padding-bottom: calc(1rem + env(safe-area-inset-bottom)) !important; }
 }
+

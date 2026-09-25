@@ -3615,13 +3615,12 @@ function renderDashboard() {
     ? `
       <section class="shell dashboard-shell driver-shell ${hasActiveJourney ? "has-active-journey" : ""} driver-nav-${escapeHtml(state.driverNav || "requests")}">
         ${renderDriverMobileHeader(profile, driver)}
-        ${modeSwitch}
+        <section class="driver-availability-focus" aria-label="Disponibilidad del conductor">${renderDriverAvailabilitySlider(driver)}</section>
         <div class="driver-app-layout">
           <aside class="driver-command-rail">
             ${renderDriverCommandRail(profile, driver, "")}
           </aside>
           <main class="driver-workspace stack">
-            ${modeHero}
             ${renderDriverWorkspacePanel(driver, hasActiveJourney)}
           </main>
         </div>
@@ -3717,7 +3716,7 @@ function renderDriverMobileHeader(profile, driver) {
   return '<header class="driver-mobile-header" aria-label="Controles del conductor">' +
     '<button class="driver-mobile-icon" type="button" data-driver-nav="account" aria-label="Abrir cuenta"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>' +
     '<div class="driver-mobile-brand">' + renderDriverPhotoBadge(profile, driver, { compact: true }) + '<span class="driver-mobile-mode-title">' + escapeHtml(getPlatformAppearance().driverModeLabel) + '</span></div>' +
-    renderDriverAvailabilitySlider(driver, true) +
+    "" +
     renderDriverVisualModeButton("", true) +
     renderDriverAlertButton("driver-mobile-alert") +
     '<button class="driver-mobile-icon" type="button" data-driver-nav="settings" aria-label="Abrir configuración"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 3 1.2 1.8 2.2.5 1.8-1 1.5 1.5-1 1.8.5 2.2L21 11v2l-1.8 1.2-.5 2.2 1 1.8-1.5 1.5-1.8-1-2.2.5L12 21l-1.2-1.8-2.2-.5-1.8 1-1.5-1.5 1-1.8-.5-2.2L5 13v-2l1.8-1.2.5-2.2-1-1.8L8.6 4.3l1.8 1 2.2-.5L12 3Z"/><circle cx="12" cy="12" r="2.5"/></svg></button>' +
@@ -3759,9 +3758,7 @@ function renderDriverCommandRail(profile, driver, modeSwitch) {
     <article class="driver-command-card">
       <h3>${isAvailable ? "Estás recibiendo solicitudes" : isBusy ? "Servicio en curso" : "¿Listo para trabajar?"}</h3>
       <p>${serviceDescription}</p>
-      <div class="driver-command-actions driver-command-status">
-        ${renderDriverAvailabilitySlider(driver)}
-      </div>
+      <div class="driver-command-actions driver-command-status" aria-hidden="true"></div>
       ${!isApproved ? `<p class="driver-rail-warning">Tu cuenta aún está ${escapeHtml(label[driver?.status] || "en proceso")}. Administración debe aprobarla antes de conectar el despacho.</p>` : ""}
     </article>
     ${renderDriverAlertControl()}
@@ -4663,7 +4660,7 @@ function renderCustomerRideDetailsStep(activePricingRules) {
       <form id="ride-request-form" class="form-grid ride-request-form customer-ride-form">
         <div class="field wide"><label for="ride-pricing-rule">Ciudad y servicio</label><select id="ride-pricing-rule" name="pricingRuleKey">${pricingOptions}</select></div>
         <div class="field wide ride-price-field ride-price-focus"><label for="ride-proposed-price">Escribe tu tarifa</label><input id="ride-proposed-price" name="proposedPriceCop" type="number" min="${initialMinimumFare}" step="1" value="${proposedPrice}" inputmode="numeric" autofocus required><span class="small-text">Valor sugerido: ${formatCop(proposedPrice)}. Puedes escribirlo de una vez.</span></div>
-        <p id="minimum-fare-hint" class="callout wide">Tarifa mínima vigente: ${formatCop(initialMinimumFare)}. Puedes proponer un valor mayor para atraer más conductores.</p>
+        <p id="minimum-fare-hint" class="callout wide">Mínimo ${formatCop(initialMinimumFare)}. Marca A y B en el mapa para calcular la tarifa sugerida por distancia.</p>
         <p id="ride-price-reference" class="ride-price-reference wide" aria-live="polite">${renderCustomerRideQuote()}</p>
         <fieldset class="ride-options-card wide">
           <legend>Pago y tarifa</legend>
@@ -6034,4 +6031,7 @@ if (state.token) {
 } else {
   renderWelcome();
 }
+
+
+
 
