@@ -7709,3 +7709,34 @@ body.account-splash-active { overflow: hidden !important; }
   .mode-switch-tab strong { font-size: 1.05rem !important; }
   .driver-status-option strong { font-size: .78rem; }
 }
+
+/* HÁGALE · viewport móvil completo 9:16 (capa final) */
+html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+#app { width: 100%; max-width: 100%; min-height: 100svh; }
+@media (max-width: 760px) {
+  html, body { min-width: 0; width: 100%; }
+  body.customer-mode, body.driver-mode { min-height: 100svh; min-height: 100dvh; }
+  body.customer-mode #app, body.driver-mode #app { width: 100%; min-height: 100svh; min-height: 100dvh; margin: 0; }
+  body.customer-mode .site-header, body.driver-mode .site-header { display: none !important; }
+  .dashboard-shell, .dashboard-shell.customer-shell, .dashboard-shell.driver-shell, .customer-panel-shell {
+    width: 100% !important; max-width: none !important; min-width: 0 !important;
+    min-height: 100svh; min-height: 100dvh; margin: 0 !important;
+    padding-left: 0 !important; padding-right: 0 !important;
+  }
+  .customer-app-header, .customer-panel-nav, .customer-panel-stage,
+  .driver-app-layout, .driver-mobile-header, .driver-workspace, .driver-command-rail {
+    width: 100% !important; max-width: none !important; min-width: 0 !important;
+    box-sizing: border-box;
+  }
+  .customer-panel-stage > *, .driver-workspace > *, .driver-command-rail > * {
+    width: 100% !important; max-width: none !important; min-width: 0 !important; box-sizing: border-box;
+  }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card {
+    width: 100% !important; max-width: none !important; min-height: calc(100dvh - 6rem);
+    margin-left: 0 !important; margin-right: 0 !important;
+  }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form,
+  .customer-panel-stage[data-active-customer-panel="ride"] .route-entry,
+  .customer-panel-stage[data-active-customer-panel="ride"] .ride-map-stage { width: 100% !important; max-width: none !important; }
+  .customer-panel-shell, .dashboard-shell { padding-bottom: calc(1rem + env(safe-area-inset-bottom)) !important; }
+}
