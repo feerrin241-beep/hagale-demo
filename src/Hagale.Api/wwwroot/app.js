@@ -2449,6 +2449,66 @@ function selectRideMapPickerTarget(target) {
   updateRideMapPickerUi();
 }
 
+async function searchRideAddressCoordinates(address, neighborhood, cityCode) {
+  const queryText = [address, neighborhood].map(value => String(value || "").trim()).filter(Boolean).join(", ");
+  const query = new URLSearchParams({ q: queryText, cityCode: cityCode || "BUC" });
+  const results = await request(`/locations/search?${query.toString()}`);
+  if (!Array.isArray(results) || !results.length) {
+    throw new Error(`No encontramos “${address}”. Prueba con calle, número y barrio.`);
+  }
+  const first = results[0];
+  const latitude = Number(first.latitude);
+  const longitude = Number(first.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw new Error(`No pudimos ubicar “${address}”.`);
+  }
+  return { latitude, longitude, displayName: first.displayName || address };
+}
+
+async function calculateRideFromTypedAddresses() {
+  const form = app.querySelector("#ride-location-step-form");
+  const button = app.querySelector("[data-geocode-ride]");
+  if (!form) return;
+  const data = Object.fromEntries(new FormData(form));
+  const pickupAddress = String(data.pickupAddress || "").trim();
+  const destinationAddress = String(data.destinationAddress || "").trim();
+  const pickupNeighborhood = String(data.pickupNeighborhood || "").trim();
+  const destinationNeighborhood = String(data.destinationNeighborhood || "").trim();
+  if (pickupAddress.length < 5 || destinationAddress.length < 5) {
+    showNotice("Escribe una dirección completa para A y otra para B.", true);
+    return;
+  }
+
+  const cityCode = String(state.customerRideDraft?.pricingRuleKey || "").split("|")[0]
+    || state.pricingRules?.find(rule => rule.isActive)?.cityCode
+    || "BUC";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Ubicando direcciones…";
+  }
+  try {
+    saveCustomerRideDraft({ pickupAddress, pickupNeighborhood, destinationAddress, destinationNeighborhood });
+    const [pickup, destination] = await Promise.all([
+      searchRideAddressCoordinates(pickupAddress, pickupNeighborhood, cityCode),
+      searchRideAddressCoordinates(destinationAddress, destinationNeighborhood, cityCode)
+    ]);
+    state.pendingPickupLocation = { pickupLatitude: pickup.latitude, pickupLongitude: pickup.longitude };
+    state.pendingDestinationLocation = { destinationLatitude: destination.latitude, destinationLongitude: destination.longitude };
+    state.customerRideStep = "details";
+    sessionStorage.setItem(customerRideStepKey, state.customerRideStep);
+    renderDashboard();
+    void refreshCustomerRideQuote();
+    showNotice("A y B ubicados. Calculando la tarifa sugerida…");
+  } catch (error) {
+    showNotice(error.message || "No pudimos ubicar las dos direcciones. Puedes usar el mapa.", true);
+  } finally {
+    const currentButton = app.querySelector("[data-geocode-ride]");
+    if (currentButton) {
+      currentButton.disabled = false;
+      currentButton.textContent = "Calcular tarifa con direcciones";
+    }
+  }
+}
 function setRideMapLocation(target, location) {
   if (target === "destination") {
     state.pendingDestinationLocation = {
@@ -4645,6 +4705,10 @@ function renderCustomerRideLocationsStep() {
           <div class="ride-location-map-frame"><div class="ride-location-map" data-ride-location-map aria-label="Mapa para elegir origen o destino"></div></div>
           <p class="small-text muted">El mapa es opcional. Si editas una dirección después de marcarla, el punto se quitará para evitar enviar una ubicación equivocada.</p>
         </section>
+        <div class="ride-auto-route-action">
+          <button class="button button-primary" type="button" data-geocode-ride>Calcular tarifa con direcciones</button>
+          <small>Escribe A y B y HÁGALE las ubicará automáticamente. El mapa queda como alternativa.</small>
+        </div>
         <div class="button-row customer-request-actions">
           <button class="button button-primary customer-next-step" type="submit">Continuar con tarifa <span aria-hidden="true">→</span></button>
         </div>
@@ -5356,6 +5420,8 @@ function bindDriverEvents() {
   });
   const pickupLocationButton = app.querySelector("[data-capture-pickup-location]");
   if (pickupLocationButton) pickupLocationButton.addEventListener("click", capturePickupLocation);
+  const autoRouteButton = app.querySelector("[data-geocode-ride]");
+  if (autoRouteButton) autoRouteButton.addEventListener("click", calculateRideFromTypedAddresses);
   const destinationLocationButton = app.querySelector("[data-capture-destination-location]");
   if (destinationLocationButton) destinationLocationButton.addEventListener("click", () => captureRideLocation("destination"));
   app.querySelectorAll("[data-open-ride-map]").forEach(button => {
@@ -6058,6 +6124,7 @@ if (state.token) {
 } else {
   renderWelcome();
 }
+
 
 
 

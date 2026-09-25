@@ -7710,6 +7710,15 @@ body.account-splash-active { overflow: hidden !important; }
   .driver-status-option strong { font-size: .78rem; }
 }
 
+.ride-auto-route-action {
+  display: grid;
+  gap: .35rem;
+  width: 100%;
+  margin: .2rem 0 .15rem;
+  text-align: center;
+}
+.ride-auto-route-action .button { width: 100%; min-height: 3.5rem; font-size: 1.05rem; font-weight: 900; }
+.ride-auto-route-action small { color: var(--muted, #a7a7af); font-size: .78rem; }
 /* HÁGALE · conductor: disponibilidad visible y cliente en panel separado */
 .driver-availability-focus {
   width: 100%;
@@ -7765,4 +7774,5 @@ html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
   .customer-panel-stage[data-active-customer-panel="ride"] .ride-map-stage { width: 100% !important; max-width: none !important; }
   .customer-panel-shell, .dashboard-shell { padding-bottom: calc(1rem + env(safe-area-inset-bottom)) !important; }
 }
+
 
