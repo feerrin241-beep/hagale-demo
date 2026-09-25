@@ -55,6 +55,7 @@ const state = {
   pricingRules: [],
   emergencyContacts: [],
   emergencyServiceChannels: [],
+  platformAppearance: null,
   adminApplications: null,
   adminStatus: "All",
   dispatchRadiusKilometers: Number(sessionStorage.getItem(dispatchRadiusKey)) || 8,
@@ -105,6 +106,25 @@ const state = {
   revealObserver: null
 };
 
+function getDefaultPlatformAppearance() {
+  return {
+    id: 1,
+    accentColor: "#FFD800",
+    actionColor: "#9BE8B8",
+    busyColor: "#D84545",
+    customerModeLabel: "CLIENTE",
+    driverModeLabel: "CONDUCTOR",
+    freeStatusLabel: "LIBRE",
+    busyStatusLabel: "OCUPADO",
+    requestActionLabel: "PEDIR MOTO",
+    driverOfferVoiceTemplate: "Nuevo servicio Hágale. Recoger en {origen}. Entregar en {destino}. Valor ofrecido {valor} pesos.",
+    updatedAtUtc: new Date().toISOString()
+  };
+}
+
+function getPlatformAppearance() {
+  return { ...getDefaultPlatformAppearance(), ...(state.platformAppearance || {}) };
+}
 let googleIdentityScriptPromise = null;
 let googleIdentityInitializedClientId = null;
 
@@ -3332,7 +3352,7 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
       : state.profile.roles.includes("Customer")
         ? request("/pricing/rules")
         : Promise.resolve([]);
-    const platformAppearancePromise = request("/platform-appearance");
+    const platformAppearancePromise = request("/platform-appearance").catch(() => getDefaultPlatformAppearance());
     const emergencyServiceChannelsPromise = state.profile.roles.includes("Administrator")
       ? request("/admin/safety/emergency-channels")
       : Promise.resolve([]);
@@ -6014,3 +6034,4 @@ if (state.token) {
 } else {
   renderWelcome();
 }
+
