@@ -1370,6 +1370,29 @@ function roadRouteKey(origin, destination) {
     .join(";");
 }
 
+function estimateDirectRoute(origin, destination) {
+  if (!origin || !destination) return null;
+  const earthRadiusKilometers = 6371;
+  const toRadians = value => Number(value) * Math.PI / 180;
+  const latitudeDelta = toRadians(destination.latitude - origin.latitude);
+  const longitudeDelta = toRadians(destination.longitude - origin.longitude);
+  const originLatitude = toRadians(origin.latitude);
+  const destinationLatitude = toRadians(destination.latitude);
+  const haversine = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(originLatitude) * Math.cos(destinationLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+  const distanceKilometers = earthRadiusKilometers * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(Math.max(0, 1 - haversine)));
+  if (!Number.isFinite(distanceKilometers)) return null;
+  return {
+    distanceKilometers: Number(distanceKilometers.toFixed(2)),
+    estimatedDurationMinutes: Math.max(1, Math.ceil(distanceKilometers / 25 * 60)),
+    geometry: [
+      { latitude: Number(origin.latitude.toFixed(6)), longitude: Number(origin.longitude.toFixed(6)) },
+      { latitude: Number(destination.latitude.toFixed(6)), longitude: Number(destination.longitude.toFixed(6)) }
+    ],
+    steps: [],
+    provider: "HÁGALE · distancia GPS aproximada"
+  };
+}
 async function getRoadRoute(origin, destination) {
   if (!origin || !destination) return null;
   const key = roadRouteKey(origin, destination);
@@ -1389,7 +1412,11 @@ async function getRoadRoute(origin, destination) {
     })
     .catch(error => {
       console.warn("No se pudo obtener la ruta real", error);
-      return null;
+      const fallback = estimateDirectRoute(origin, destination);
+      if (fallback) {
+        showNotice("Ruta por calles no disponible; usamos una distancia GPS aproximada.");
+      }
+      return fallback;
     })
     .finally(() => state.roadRoutePending.delete(key));
   state.roadRoutePending.set(key, pending);
@@ -6031,6 +6058,7 @@ if (state.token) {
 } else {
   renderWelcome();
 }
+
 
 
 
