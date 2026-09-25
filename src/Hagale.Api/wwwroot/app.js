@@ -792,9 +792,17 @@ function buildDriverOfferVoiceMessage(offer) {
   const totalDistance = offer.totalDistanceKilometers ?? offer.tripDistanceKilometers;
   const minutes = getOfferEstimatedMinutes(offer);
   const classification = getDriverOfferClassification(offer);
+  const appearance = getPlatformAppearance();
   const distanceLine = formatDistanceForVoice(totalDistance);
   const timeLine = minutes ? numberToSpanishForVoice(minutes) + " minutos" : "tiempo pendiente";
-  return "Nuevo servicio Hágale. Recoger en " + pickupNeighborhood + summarizeAddressForVoice(pickup.address) + ". Entregar en " + destinationNeighborhood + summarizeAddressForVoice(destination.address) + ". Distancia aproximada " + distanceLine + ". Tiempo estimado " + timeLine + ". Valor ofrecido " + formatCopForVoice(offer.proposedPriceCop) + ". " + classification.label + ". Diga: ACEPTO EL SERVICIO.";
+  const origin = pickupNeighborhood + summarizeAddressForVoice(pickup.address);
+  const destinationLine = destinationNeighborhood + summarizeAddressForVoice(destination.address);
+  return appearance.driverOfferVoiceTemplate
+    .replaceAll("{origen}", origin)
+    .replaceAll("{destino}", destinationLine)
+    .replaceAll("{valor}", formatCopForVoice(offer.proposedPriceCop))
+    .replaceAll("{distancia}", distanceLine)
+    .replaceAll("{tiempo}", timeLine) + " " + classification.label + ". Diga: ACEPTO EL SERVICIO.";
 }
 
 function notifyDriverNewOffers(newOffers) {
@@ -3324,17 +3332,19 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
       : state.profile.roles.includes("Customer")
         ? request("/pricing/rules")
         : Promise.resolve([]);
+    const platformAppearancePromise = request("/platform-appearance");
     const emergencyServiceChannelsPromise = state.profile.roles.includes("Administrator")
       ? request("/admin/safety/emergency-channels")
       : Promise.resolve([]);
     const adminApplicationsPromise = state.profile.roles.includes("Administrator")
       ? loadAdminApplications().then(() => state.adminApplications)
       : Promise.resolve(null);
-    [state.emergencyContacts, state.pricingRules, state.emergencyServiceChannels, state.adminApplications] = await Promise.all([
+    [state.emergencyContacts, state.pricingRules, state.emergencyServiceChannels, state.adminApplications, state.platformAppearance] = await Promise.all([
       emergencyContactsPromise,
       pricingRulesPromise,
       emergencyServiceChannelsPromise,
-      adminApplicationsPromise
+      adminApplicationsPromise,
+      platformAppearancePromise
     ]);
     if (!sessionStorage.getItem(accountSplashSessionKey)) {
       state.accountSplashPending = true;
@@ -3492,11 +3502,30 @@ function renderDriverWorkspacePanel(driver, hasActiveJourney) {
 }
 
 function getDriverLiveModeLabel(driver) {
-  if (driver?.availabilityStatus === "Busy") return "OCUPADO";
-  if (driver?.availabilityStatus === "Available") return "LIBRE";
-  return "DESCONECTADO";
+  const appearance = getPlatformAppearance();
+  if (driver?.availabilityStatus === "Busy") return "EN SERVICIO";
+  if (driver?.availabilityStatus === "Available") return appearance.freeStatusLabel;
+  return appearance.busyStatusLabel;
 }
 
+function renderDriverAvailabilitySlider(driver, compact = false) {
+  const appearance = getPlatformAppearance();
+  const isApproved = driver?.status === "Approved";
+  const isAvailable = driver?.availabilityStatus === "Available";
+  const isBusy = driver?.availabilityStatus === "Busy";
+  const visibleOfferCount = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id)).length;
+  const detail = isBusy
+    ? "Viaje activo"
+    : isAvailable
+      ? String(visibleOfferCount) + (visibleOfferCount === 1 ? " solicitud cercana" : " solicitudes cercanas")
+      : isApproved ? "No recibes solicitudes" : "Cuenta en revisión";
+  const locked = !isApproved || isBusy;
+  return '<div class="driver-status-control ' + (compact ? "is-compact" : "") + " " + (isBusy ? "is-journey" : isAvailable ? "is-free" : "is-occupied") + '" data-availability-slider data-availability-locked="' + (locked ? "true" : "false") + '">' +
+    '<div class="driver-status-slider" role="group" aria-label="Disponibilidad del conductor">' +
+      '<button class="driver-status-option driver-status-occupied ' + (!isAvailable ? "is-active" : "") + '" type="button" data-availability="Offline" ' + (locked ? "disabled" : "") + ' aria-pressed="' + (!isAvailable) + '"><span class="driver-status-dot" aria-hidden="true"></span><strong>' + escapeHtml(appearance.busyStatusLabel) + '</strong><small>No recibir</small></button>' +
+      '<button class="driver-status-option driver-status-free ' + (isAvailable ? "is-active" : "") + '" type="button" data-availability="Available" ' + (locked ? "disabled" : "") + ' aria-pressed="' + (isAvailable) + '"><span class="driver-status-dot" aria-hidden="true"></span><strong>' + escapeHtml(appearance.freeStatusLabel) + '</strong><small>Recibir viajes</small></button>' +
+    '</div><small class="driver-status-detail">' + escapeHtml(isBusy ? "EN SERVICIO · " : "") + escapeHtml(detail) + '</small></div>';
+}
 function renderDriverQuickActions(activePanel, hasActiveJourney) {
   const visibleOfferCount = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id)).length;
   const chatMeta = hasActiveJourney ? "Carrera activa" : "Al aceptar";
@@ -3665,34 +3694,15 @@ function renderProfilePanel(profile) {
 }
 
 function renderDriverMobileHeader(profile, driver) {
-  const isApproved = driver?.status === "Approved";
-  const isAvailable = driver?.availabilityStatus === "Available";
-  const isBusy = driver?.availabilityStatus === "Busy";
-  const visibleOfferCount = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id)).length;
-  const statusLabel = getDriverLiveModeLabel(driver);
-  const targetAvailability = isAvailable ? "Offline" : "Available";
-  const statusDetail = isBusy
-    ? "Servicio activo"
-    : isAvailable
-      ? `${visibleOfferCount} ${visibleOfferCount === 1 ? "solicitud" : "solicitudes"}`
-      : isApproved
-        ? "Toca para conectar"
-        : "En revisión";
-  const canToggle = isApproved && !isBusy;
-
-  return `
-    <header class="driver-mobile-header" aria-label="Controles del conductor">
-      <button class="driver-mobile-icon" type="button" data-driver-nav="account" aria-label="Abrir cuenta"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-      <div class="driver-mobile-brand">${renderDriverPhotoBadge(profile, driver, { compact: true })}<span class="driver-mobile-mode-title">CONDUCTOR</span></div>
-      <button class="driver-availability-toggle ${isAvailable ? "is-available" : isBusy ? "is-busy" : ""}" type="button" data-availability="${targetAvailability}" ${canToggle ? "" : "disabled"} aria-label="Estado ${statusLabel}">
-        <span class="driver-mobile-status-main"><i aria-hidden="true"></i><strong>${statusLabel}</strong></span><small>${statusDetail}</small>
-      </button>
-       ${renderDriverVisualModeButton("", true)}
-       ${renderDriverAlertButton("driver-mobile-alert")}
-      <button class="driver-mobile-icon" type="button" data-driver-nav="settings" aria-label="Abrir configuración"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 3 1.2 1.8 2.2.5 1.8-1 1.5 1.5-1 1.8.5 2.2L21 11v2l-1.8 1.2-.5 2.2 1 1.8-1.5 1.5-1.8-1-2.2.5L12 21l-1.2-1.8-2.2-.5-1.8 1-1.5-1.5 1-1.8-.5-2.2L5 13v-2l1.8-1.2.5-2.2-1-1.8L8.6 4.3l1.8 1 2.2-.5L12 3Z"/><circle cx="12" cy="12" r="2.5"/></svg></button>
-    </header>`;
+  return '<header class="driver-mobile-header" aria-label="Controles del conductor">' +
+    '<button class="driver-mobile-icon" type="button" data-driver-nav="account" aria-label="Abrir cuenta"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>' +
+    '<div class="driver-mobile-brand">' + renderDriverPhotoBadge(profile, driver, { compact: true }) + '<span class="driver-mobile-mode-title">' + escapeHtml(getPlatformAppearance().driverModeLabel) + '</span></div>' +
+    renderDriverAvailabilitySlider(driver, true) +
+    renderDriverVisualModeButton("", true) +
+    renderDriverAlertButton("driver-mobile-alert") +
+    '<button class="driver-mobile-icon" type="button" data-driver-nav="settings" aria-label="Abrir configuración"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 3 1.2 1.8 2.2.5 1.8-1 1.5 1.5-1 1.8.5 2.2L21 11v2l-1.8 1.2-.5 2.2 1 1.8-1.5 1.5-1.8-1-2.2.5L12 21l-1.2-1.8-2.2-.5-1.8 1-1.5-1.5 1-1.8-.5-2.2L5 13v-2l1.8-1.2.5-2.2-1-1.8L8.6 4.3l1.8 1 2.2-.5L12 3Z"/><circle cx="12" cy="12" r="2.5"/></svg></button>' +
+    '</header>';
 }
-
 function renderDriverBottomNav() {
   const activeNav = state.driverNav || "requests";
   const navButton = (destination, icon, text) => `<button type="button" class="${activeNav === destination ? "is-selected" : ""}" data-driver-nav="${destination}" aria-current="${activeNav === destination ? "page" : "false"}">${icon}<small>${text}</small></button>`;
@@ -3729,9 +3739,8 @@ function renderDriverCommandRail(profile, driver, modeSwitch) {
     <article class="driver-command-card">
       <h3>${isAvailable ? "Estás recibiendo solicitudes" : isBusy ? "Servicio en curso" : "¿Listo para trabajar?"}</h3>
       <p>${serviceDescription}</p>
-      <div class="driver-command-actions">
-        <button class="button driver-online-button" type="button" data-availability="Available" ${isApproved && !isBusy && !isAvailable ? "" : "disabled"}>${isAvailable ? "Disponible ahora" : "Activar disponibilidad"}</button>
-        <button class="button button-secondary" type="button" data-availability="Offline" ${isApproved && !isBusy && isAvailable ? "" : "disabled"}>Desconectarme</button>
+      <div class="driver-command-actions driver-command-status">
+        ${renderDriverAvailabilitySlider(driver)}
       </div>
       ${!isApproved ? `<p class="driver-rail-warning">Tu cuenta aún está ${escapeHtml(label[driver?.status] || "en proceso")}. Administración debe aprobarla antes de conectar el despacho.</p>` : ""}
     </article>
@@ -4045,6 +4054,7 @@ function renderDriverRideRequestsPanel() {
 
 function renderDriverOfferSheet(offer) {
   const classification = getDriverOfferClassification(offer);
+  const appearance = getPlatformAppearance();
   const requestedFare = Number(offer?.proposedPriceCop) || 0;
   const distanceReferenceFare = Number(offer?.directDistanceReferenceFareCop) || 0;
   const counterOfferBase = Math.max(requestedFare, distanceReferenceFare);
@@ -4802,10 +4812,7 @@ function renderDriverPanel(driver, isDriver) {
         <div>
           <h3>Disponibilidad</h3>
           <p class="muted small-text">${canToggleAvailability ? "Elige cuándo estás disponible. El estado ocupado solo lo gestionarán los viajes." : "Se habilitará cuando la solicitud esté aprobada y tu cuenta reciba el rol de conductor."}</p>
-          <div class="button-row">
-            <button class="button button-primary" type="button" data-availability="Available" ${canToggleAvailability ? "" : "disabled"}>Estoy disponible</button>
-            <button class="button button-secondary" type="button" data-availability="Offline" ${canToggleAvailability ? "" : "disabled"}>Ponerme offline</button>
-          </div>
+          ${renderDriverAvailabilitySlider(driver)}
         </div>
       </div>
       <details class="edit-panel" ${driver.vehicles.length ? "" : "open"}>
@@ -5050,6 +5057,30 @@ function goBackPanel() {
   app.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function renderPlatformAppearanceAdminPanel() {
+  const appearance = getPlatformAppearance();
+  const field = (id, labelText, name, value, type = "text") =>
+    '<div class="field"><label for="' + id + '">' + labelText + '</label><input id="' + id + '" name="' + name + '" type="' + type + '" value="' + escapeHtml(value) + '" required></div>';
+  return '<article class="card wide design-center-card">' +
+    '<span class="eyebrow">Administración · diseño</span><h2>Centro de diseño</h2>' +
+    '<p class="muted small-text">Cambia los colores, nombres de estados y el aviso de voz desde aquí. Los cambios quedan guardados para todos los usuarios.</p>' +
+    '<form id="platform-appearance-form" class="stack">' +
+      '<div class="form-grid design-color-grid">' +
+        field("appearance-accent", "Amarillo de marca", "accentColor", appearance.accentColor, "color") +
+        field("appearance-action", "Verde de acciones", "actionColor", appearance.actionColor, "color") +
+        field("appearance-busy", "Rojo OCUPADO", "busyColor", appearance.busyColor, "color") +
+      '</div>' +
+      '<div class="form-grid">' +
+        field("appearance-customer-label", "Botón de cliente", "customerModeLabel", appearance.customerModeLabel) +
+        field("appearance-driver-label", "Botón de conductor", "driverModeLabel", appearance.driverModeLabel) +
+        field("appearance-free-label", "Estado disponible", "freeStatusLabel", appearance.freeStatusLabel) +
+        field("appearance-busy-label", "Estado sin solicitudes", "busyStatusLabel", appearance.busyStatusLabel) +
+        field("appearance-request-label", "Botón para pedir", "requestActionLabel", appearance.requestActionLabel) +
+      '</div>' +
+      '<div class="field"><label for="appearance-voice-template">Plantilla de voz del conductor</label><textarea id="appearance-voice-template" name="driverOfferVoiceTemplate" rows="3" maxlength="500" required>' + escapeHtml(appearance.driverOfferVoiceTemplate) + '</textarea><small class="muted">Variables disponibles: {origen}, {destino}, {valor}, {distancia}, {tiempo}.</small></div>' +
+      '<div class="button-row"><button class="button button-primary" type="submit">Guardar diseño</button><span class="muted small-text">Se aplica al recargar el panel.</span></div>' +
+    '</form></article>';
+}
 function renderAdminPanel() {
   const page = state.adminApplications;
   const items = page?.items || [];
@@ -5069,10 +5100,25 @@ function renderAdminPanel() {
       </div>
       <ul class="application-list">${list}</ul>
     </article>
+    ${renderPlatformAppearanceAdminPanel()}
     ${renderPricingAdminPanel()}
     ${renderEmergencyChannelsAdminPanel()}`;
 }
 
+async function updatePlatformAppearance(event) {
+  event.preventDefault();
+  try {
+    state.platformAppearance = await request("/platform-appearance", {
+      method: "PUT",
+      data: Object.fromEntries(new FormData(event.currentTarget))
+    });
+    applyVisualMode();
+    renderDashboard();
+    showNotice("Diseño guardado para toda la plataforma.");
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
 function selected(value, expected) {
   return value === expected ? "selected" : "";
 }
@@ -5392,8 +5438,37 @@ function bindDriverEvents() {
       }
     });
   });
+  app.querySelectorAll("[data-availability-slider]").forEach(slider => {
+    let startX = null;
+    let startY = null;
+    slider.addEventListener("pointerdown", event => {
+      if (slider.dataset.availabilityLocked === "true") return;
+      startX = event.clientX;
+      startY = event.clientY;
+    });
+    slider.addEventListener("pointerup", event => {
+      if (startX === null || startY === null) return;
+      const deltaX = event.clientX - startX;
+      const deltaY = event.clientY - startY;
+      startX = null;
+      startY = null;
+      if (Math.abs(deltaX) < 28 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+      const target = slider.querySelector('[data-availability="' + (deltaX > 0 ? "Available" : "Offline") + '"]');
+      if (!target || target.disabled) return;
+      target.click();
+      slider.dataset.suppressClick = "true";
+    });
+    slider.addEventListener("pointercancel", () => {
+      startX = null;
+      startY = null;
+    });
+  });
   app.querySelectorAll("[data-availability]").forEach(button => {
-    button.addEventListener("click", () => changeAvailability(button.dataset.availability));
+    button.addEventListener("click", () => {
+      const slider = button.closest("[data-availability-slider]");
+      if (slider?.dataset.suppressClick === "true") { delete slider.dataset.suppressClick; return; }
+      changeAvailability(button.dataset.availability);
+    });
   });
 }
 
@@ -5441,6 +5516,8 @@ function bindAdminEvents() {
   app.querySelectorAll("[data-emergency-channel-id]").forEach(form => {
     form.addEventListener("submit", event => updateEmergencyServiceChannel(event, form.dataset.emergencyChannelId));
   });
+  const appearanceForm = app.querySelector("#platform-appearance-form");
+  if (appearanceForm) appearanceForm.addEventListener("submit", updatePlatformAppearance);
   const createEmergencyChannelForm = app.querySelector("#create-emergency-channel-form");
   if (createEmergencyChannelForm) createEmergencyChannelForm.addEventListener("submit", createEmergencyServiceChannel);
 }
@@ -5756,7 +5833,7 @@ async function changeAvailability(availabilityStatus) {
       state.driverCurrentRideRequest = null;
     }
     renderDashboard();
-    showNotice(availabilityStatus === "Available" ? "Ya estás disponible." : "Tu disponibilidad está desconectada.");
+    showNotice(availabilityStatus === "Available" ? "Estás LIBRE y recibirás solicitudes cercanas." : "Quedaste OCUPADO y no recibirás nuevas solicitudes.");
   } catch (error) { showNotice(error.message, true); }
 }
 

@@ -1,5 +1,6 @@
 using Hagale.Domain.Drivers;
 using Hagale.Domain.Pricing;
+using Hagale.Domain.Platform;
 using Hagale.Domain.Rides;
 using Hagale.Domain.Safety;
 using Hagale.Infrastructure.Identity;
@@ -24,6 +25,7 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
     public DbSet<EmergencyContact> EmergencyContacts => Set<EmergencyContact>();
     public DbSet<EmergencyServiceChannel> EmergencyServiceChannels => Set<EmergencyServiceChannel>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<PlatformAppearance> PlatformAppearances => Set<PlatformAppearance>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -132,6 +134,22 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
             entity.HasIndex(log => log.ActorUserId);
         });
 
+        builder.Entity<PlatformAppearance>(entity =>
+        {
+            entity.ToTable("PlatformAppearances");
+            entity.HasKey(appearance => appearance.Id);
+            entity.Property(appearance => appearance.Id).ValueGeneratedNever();
+            entity.Property(appearance => appearance.AccentColor).HasMaxLength(16).IsRequired();
+            entity.Property(appearance => appearance.ActionColor).HasMaxLength(16).IsRequired();
+            entity.Property(appearance => appearance.BusyColor).HasMaxLength(16).IsRequired();
+            entity.Property(appearance => appearance.CustomerModeLabel).HasMaxLength(40).IsRequired();
+            entity.Property(appearance => appearance.DriverModeLabel).HasMaxLength(40).IsRequired();
+            entity.Property(appearance => appearance.FreeStatusLabel).HasMaxLength(40).IsRequired();
+            entity.Property(appearance => appearance.BusyStatusLabel).HasMaxLength(40).IsRequired();
+            entity.Property(appearance => appearance.RequestActionLabel).HasMaxLength(80).IsRequired();
+            entity.Property(appearance => appearance.DriverOfferVoiceTemplate).HasMaxLength(500).IsRequired();
+            entity.Property(appearance => appearance.UpdatedAtUtc).IsRequired();
+        });
         builder.Entity<RideRequest>(entity =>
         {
             entity.ToTable("RideRequests");

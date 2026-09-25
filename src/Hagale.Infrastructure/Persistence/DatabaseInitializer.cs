@@ -1,5 +1,6 @@
 using Hagale.Application.Authentication;
 using Hagale.Domain.Pricing;
+using Hagale.Domain.Platform;
 using Hagale.Domain.Rides;
 using Hagale.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -40,6 +41,22 @@ public static class DatabaseInitializer
                     ON "StoredDocumentBlobs" ("OwnerUserId");
                 """, cancellationToken);
             await database.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS "PlatformAppearances" (
+                    "Id" integer NOT NULL,
+                    "AccentColor" character varying(16) NOT NULL,
+                    "ActionColor" character varying(16) NOT NULL,
+                    "BusyColor" character varying(16) NOT NULL,
+                    "CustomerModeLabel" character varying(40) NOT NULL,
+                    "DriverModeLabel" character varying(40) NOT NULL,
+                    "FreeStatusLabel" character varying(40) NOT NULL,
+                    "BusyStatusLabel" character varying(40) NOT NULL,
+                    "RequestActionLabel" character varying(80) NOT NULL,
+                    "DriverOfferVoiceTemplate" character varying(500) NOT NULL,
+                    "UpdatedAtUtc" timestamp with time zone NOT NULL,
+                    CONSTRAINT "PK_PlatformAppearances" PRIMARY KEY ("Id")
+                );
+                """, cancellationToken);
+            await database.Database.ExecuteSqlRawAsync("""
                 ALTER TABLE "PricingRules"
                     ADD COLUMN IF NOT EXISTS "FairOfferMinimumPercent" integer NOT NULL DEFAULT 90;
                 ALTER TABLE "PricingRules"
@@ -58,6 +75,13 @@ public static class DatabaseInitializer
                     throw new InvalidOperationException($"No fue posible inicializar el rol {roleName}.");
                 }
             }
+        }
+
+
+        if (!await database.PlatformAppearances.AnyAsync(cancellationToken))
+        {
+            database.PlatformAppearances.Add(new PlatformAppearance(timeProvider.GetUtcNow()));
+            await database.SaveChangesAsync(cancellationToken);
         }
 
         if (!await database.PricingRules.AnyAsync(cancellationToken))
