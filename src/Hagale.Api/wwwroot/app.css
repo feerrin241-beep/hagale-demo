@@ -7776,3 +7776,129 @@ html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
 }
 
 
+
+/* Revisión estética HÁGALE · superficies limpias y jerarquía móvil */
+.visual-night.customer-mode,
+.visual-night.customer-mode #app,
+.visual-night.customer-mode .customer-panel-shell {
+  background: #050506;
+}
+
+.visual-night.customer-mode .customer-panel-shell {
+  color: #f5f5f0;
+}
+
+/* El selector y los paneles principales son la navegación; el hero repetía información. */
+.customer-panel-shell > .mode-hero-customer {
+  display: none;
+}
+
+.customer-panel-shell > .mode-switch-app {
+  margin-top: .35rem;
+}
+
+.customer-panel-shell .customer-panel-nav {
+  margin-top: .65rem;
+  margin-bottom: .65rem;
+}
+
+.visual-night.customer-mode .customer-panel-nav {
+  padding: .42rem;
+  border: 1px solid #2d2e36;
+  border-radius: .95rem;
+  background: #0d0e12;
+}
+
+.visual-night.customer-mode .customer-panel-tab {
+  min-height: 3.25rem;
+  border-color: #34353e;
+  color: #f5f5f0;
+  background: #17181e;
+  transition: transform .18s ease, color .18s ease, background .18s ease, border-color .18s ease;
+}
+
+.visual-night.customer-mode .customer-panel-tab small {
+  color: #aeb0b8;
+}
+
+.visual-night.customer-mode .customer-panel-tab.is-active {
+  border-color: #ffd800;
+  color: #111218;
+  background: #ffd800;
+  box-shadow: 0 .25rem .7rem rgba(255,216,0,.16);
+}
+
+.visual-night.customer-mode .customer-panel-tab.is-active small {
+  color: #3c3100;
+}
+
+.visual-night.customer-mode .customer-panel-tab:hover {
+  border-color: #ffd800;
+  transform: translateY(-1px);
+}
+
+.visual-night.customer-mode .customer-panel-stage {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Menos ruido visual en la solicitud: negro como lienzo y blanco/amarillo solo para decisiones. */
+.visual-night.customer-mode .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card {
+  border-color: #2a2b33;
+  border-top-color: #ffd800;
+  background: #08090c;
+  box-shadow: 0 1rem 2.4rem rgba(0,0,0,.24);
+}
+
+.visual-night.customer-mode .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-stage-heading h3 {
+  border: 1px solid rgba(255,216,0,.55);
+  background: #111218;
+}
+
+.visual-night.customer-mode .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field {
+  border-color: #2a2b33;
+  box-shadow: 0 .45rem 1rem rgba(0,0,0,.18);
+}
+
+/* Controles superiores alineados y con la misma altura visual. */
+.customer-app-actions .button,
+.customer-app-actions .customer-mode-entry {
+  min-height: 2.75rem;
+  border-radius: .72rem;
+}
+
+.customer-app-actions [data-sign-out] {
+  font-weight: 1000;
+}
+
+@media (max-width: 760px) {
+  .customer-panel-shell > .mode-switch-app {
+    margin-top: 0;
+    border-right: 0;
+    border-left: 0;
+  }
+
+  .visual-night.customer-mode .customer-panel-nav {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+    padding: .42rem .7rem;
+  }
+
+  .visual-night.customer-mode .customer-panel-tab {
+    flex-basis: 8.2rem;
+    min-height: 3rem;
+  }
+
+  .visual-night.customer-mode .customer-panel-tab small {
+    display: none;
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card {
+    min-height: calc(100dvh - 9.2rem);
+  }
+
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field {
+    border-radius: .8rem;
+  }
+}
