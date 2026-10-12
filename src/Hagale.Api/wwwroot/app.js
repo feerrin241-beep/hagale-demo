@@ -635,28 +635,58 @@ function unlockDriverAlertsFromGesture() {
 window.addEventListener("pointerdown", unlockDriverAlertsFromGesture, { passive: true });
 window.addEventListener("keydown", unlockDriverAlertsFromGesture, { passive: true });
 
-async function playDriverOfferTone(force = false, repeatCount = 1) {
+const rideNotificationCues = {
+  service: [
+    { frequency: 1046, offset: 0, duration: 0.11 },
+    { frequency: 1397, offset: 0.15, duration: 0.11 },
+    { frequency: 1046, offset: 0.30, duration: 0.17 }
+  ],
+  proposal: [
+    { frequency: 659, offset: 0, duration: 0.12 },
+    { frequency: 784, offset: 0.16, duration: 0.12 },
+    { frequency: 988, offset: 0.32, duration: 0.18 }
+  ],
+  pickup: [
+    { frequency: 523, offset: 0, duration: 0.14 },
+    { frequency: 659, offset: 0.18, duration: 0.14 },
+    { frequency: 784, offset: 0.36, duration: 0.2 }
+  ],
+  arrival: [
+    { frequency: 880, offset: 0, duration: 0.13 },
+    { frequency: 1174, offset: 0.2, duration: 0.18 }
+  ],
+  tripStart: [
+    { frequency: 587, offset: 0, duration: 0.13 },
+    { frequency: 740, offset: 0.17, duration: 0.13 },
+    { frequency: 880, offset: 0.34, duration: 0.2 }
+  ],
+  completed: [
+    { frequency: 1046, offset: 0, duration: 0.13 },
+    { frequency: 784, offset: 0.18, duration: 0.13 },
+    { frequency: 523, offset: 0.36, duration: 0.22 }
+  ]
+};
+
+async function playRideNotificationCue(cueName = "service", force = false) {
   if (!force && !state.driverSoundAlertsEnabled) return;
   try {
     const context = await getDriverAudioContext();
     if (!context) return;
     const startedAt = context.currentTime + 0.02;
-    const tones = [880, 1174, 1568, 1174];
-    for (let repeat = 0; repeat < repeatCount; repeat += 1) {
-      tones.forEach((frequency, index) => {
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        const toneStart = startedAt + repeat * 0.78 + index * 0.14;
-        oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(frequency, toneStart);
-        gain.gain.setValueAtTime(0.0001, toneStart);
-        gain.gain.exponentialRampToValueAtTime(0.3, toneStart + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, toneStart + 0.13);
-        oscillator.connect(gain).connect(context.destination);
-        oscillator.start(toneStart);
-        oscillator.stop(toneStart + 0.15);
-      });
-    }
+    const tones = rideNotificationCues[cueName] || rideNotificationCues.service;
+    tones.forEach(({ frequency, offset, duration }) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const toneStart = startedAt + offset;
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, toneStart);
+      gain.gain.setValueAtTime(0.0001, toneStart);
+      gain.gain.exponentialRampToValueAtTime(0.24, toneStart + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, toneStart + duration);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(toneStart);
+      oscillator.stop(toneStart + duration + 0.02);
+    });
   } catch {
     // Algunos navegadores bloquean audio automático hasta que el conductor toca
     // "Activar avisos". La interfaz sigue funcionando con el aviso visual.
@@ -760,12 +790,12 @@ function startDriverVoiceAcceptance(offer) {
   }
 }
 
-function announceRideNotification(message, { alert = true, forceVoice = false, forceSound = false } = {}) {
+function announceRideNotification(message, { alert = true, forceVoice = false, forceSound = false, soundType = "service" } = {}) {
   showNotice(`🔔 ${message}`, false, alert);
   if (navigator.vibrate) {
     navigator.vibrate([160, 80, 160, 80, 220]);
   }
-  void playDriverOfferTone(forceSound, 2);
+  void playRideNotificationCue(soundType, forceSound);
   return speakDriverAlert(message, forceVoice);
 }
 
@@ -804,7 +834,11 @@ function announceDriverJourneyLeg(rideRequest, leg) {
   const message = leg === "destination"
     ? buildDriverDestinationVoiceMessage(rideRequest)
     : buildDriverPickupVoiceMessage(rideRequest);
-  announceRideNotification(message, { forceVoice: true, forceSound: true });
+  announceRideNotification(message, {
+    forceVoice: true,
+    forceSound: true,
+    soundType: leg === "destination" ? "arrival" : "pickup"
+  });
 }
 
 function repeatDriverRoute(rideRequestId) {
@@ -858,7 +892,7 @@ function notifyDriverNewOffers(newOffers) {
   if (now - state.lastDriverOfferAlertAt < 3_500) return;
   state.lastDriverOfferAlertAt = now;
 
-  const utterance = announceRideNotification(message);
+  const utterance = announceRideNotification(message, { soundType: "service" });
   void showDriverSystemNotification(offers);
   if (offers.length === 1) {
     let started = false;
@@ -932,7 +966,7 @@ async function toggleDriverOfferAlerts() {
   const currentlyEnabled = state.driverSoundAlertsEnabled || state.driverVoiceAlertsEnabled || state.driverSystemAlertsEnabled;
   if (currentlyEnabled && !state.driverAlertsUnlocked) {
     state.driverAlertsUnlocked = true;
-    await playDriverOfferTone(true);
+    await playRideNotificationCue("service", true);
     speakDriverAlert("Prueba de avisos HÁGALE activada. Cuando llegue un servicio sonará la alerta.", true);
     renderDashboard();
     showNotice("🔔 Prueba de sonido y voz activada.", false, true);
@@ -957,7 +991,7 @@ async function toggleDriverOfferAlerts() {
   state.driverSystemAlertsEnabled = await requestDriverSystemNotificationPermission();
   state.driverAlertsUnlocked = true;
   persistDriverAlertPreferences();
-  await playDriverOfferTone(true);
+  await playRideNotificationCue("service", true);
   speakDriverAlert("Avisos activados. Te avisaré cuando llegue un nuevo servicio.", true);
   renderDashboard();
 
@@ -2414,7 +2448,7 @@ async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
         newlyReceivedOffers.length === 1
           ? "Nueva propuesta de conductor recibida. Revisa el precio y el tiempo de llegada."
           : `Llegaron ${newlyReceivedOffers.length} nuevas propuestas de conductores. Revísalas para elegir.`,
-        { forceSound: true }
+        { forceSound: true, soundType: "proposal" }
       );
     }
     if (notifyJourneyChange && journeyChanged) {
@@ -2452,7 +2486,17 @@ function announceCustomerJourneyUpdate(rideRequest, status) {
   const notificationKey = `${rideRequest?.id || "ride"}:${status}`;
   if (state.lastCustomerJourneyVoiceKey === notificationKey) return;
   state.lastCustomerJourneyVoiceKey = notificationKey;
-  announceRideNotification(message, { forceVoice: true, forceSound: true });
+  const cueByStatus = {
+    Accepted: "pickup",
+    DriverArrived: "arrival",
+    InProgress: "tripStart",
+    Completed: "completed"
+  };
+  announceRideNotification(message, {
+    forceVoice: true,
+    forceSound: true,
+    soundType: cueByStatus[status] || "service"
+  });
 }
 
 function testCustomerVoiceAlerts() {
@@ -6189,7 +6233,11 @@ async function updateRideJourney(action, rideRequestId) {
     await refreshDriverDispatch();
     renderDashboard();
     if (action === "complete") {
-      announceRideNotification("Su viaje ha sido finalizado.", { forceVoice: true, forceSound: true });
+      announceRideNotification("Su viaje ha sido finalizado.", {
+        forceVoice: true,
+        forceSound: true,
+        soundType: "completed"
+      });
     }
     showNotice(messageByAction[action]);
   } catch (error) { showNotice(error.message, true); }
