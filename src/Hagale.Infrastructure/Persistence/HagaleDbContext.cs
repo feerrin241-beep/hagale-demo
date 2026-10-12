@@ -19,6 +19,7 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
     public DbSet<DriverDocument> DriverDocuments => Set<DriverDocument>();
     public DbSet<StoredDocumentBlob> StoredDocumentBlobs => Set<StoredDocumentBlob>();
     public DbSet<RideRequest> RideRequests => Set<RideRequest>();
+    public DbSet<RideDriverOffer> RideDriverOffers => Set<RideDriverOffer>();
     public DbSet<RideChatMessage> RideChatMessages => Set<RideChatMessage>();
     public DbSet<RideRating> RideRatings => Set<RideRating>();
     public DbSet<PricingRule> PricingRules => Set<PricingRule>();
@@ -169,6 +170,8 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
             entity.Property(request => request.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
             entity.Property(request => request.CancellationReason).HasMaxLength(500);
             entity.Property(request => request.CounterOfferPriceCop);
+            entity.Property(request => request.OfferWindowEndsAtUtc);
+            entity.Property(request => request.OfferSearchRound).HasDefaultValue(1).IsRequired();
             entity.Property(request => request.PickupLatitude).HasPrecision(9, 6);
             entity.Property(request => request.PickupLongitude).HasPrecision(9, 6);
             entity.Property(request => request.DestinationLatitude).HasPrecision(9, 6);
@@ -184,6 +187,30 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
             entity.HasOne<AppUser>()
                 .WithMany()
                 .HasForeignKey(request => request.CustomerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(request => request.DriverOffers)
+                .WithOne()
+                .HasForeignKey(offer => offer.RideRequestId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.Navigation(request => request.DriverOffers)
+                .UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        builder.Entity<RideDriverOffer>(entity =>
+        {
+            entity.ToTable("RideDriverOffers");
+            entity.HasKey(offer => offer.Id);
+            entity.Property(offer => offer.Status).HasConversion<string>().HasMaxLength(30).IsRequired();
+            entity.Property(offer => offer.OfferedPriceCop).IsRequired();
+            entity.Property(offer => offer.OfferedAtUtc).IsRequired();
+            entity.Property(offer => offer.ExpiresAtUtc).IsRequired();
+            entity.Property(offer => offer.SearchRound).IsRequired();
+            entity.HasIndex(offer => new { offer.RideRequestId, offer.Status, offer.SearchRound });
+            entity.HasIndex(offer => new { offer.DriverProfileId, offer.Status, offer.ExpiresAtUtc });
+            entity.HasIndex(offer => new { offer.RideRequestId, offer.DriverProfileId, offer.SearchRound }).IsUnique();
+            entity.HasOne<DriverProfile>()
+                .WithMany()
+                .HasForeignKey(offer => offer.DriverProfileId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

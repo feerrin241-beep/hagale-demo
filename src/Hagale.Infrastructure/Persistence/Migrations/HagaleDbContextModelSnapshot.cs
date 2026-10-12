@@ -180,6 +180,64 @@ namespace Hagale.Infrastructure.Persistence.Migrations
                     b.ToTable("Vehicles", (string)null);
                 });
 
+            modelBuilder.Entity("Hagale.Domain.Platform.PlatformAppearance", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AccentColor")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("ActionColor")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("BusyColor")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("BusyStatusLabel")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("CustomerModeLabel")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("DriverModeLabel")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("DriverOfferVoiceTemplate")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("FreeStatusLabel")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<string>("RequestActionLabel")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PlatformAppearances", (string)null);
+                });
+
             modelBuilder.Entity("Hagale.Domain.Pricing.PricingRule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -199,11 +257,21 @@ namespace Hagale.Infrastructure.Persistence.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<int>("FairOfferMinimumPercent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(90);
+
                     b.Property<int>("FarePerKilometerCop")
                         .HasColumnType("int");
 
                     b.Property<int>("FarePerMinuteCop")
                         .HasColumnType("int");
+
+                    b.Property<int>("FavorableOfferMinimumPercent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(105);
 
                     b.Property<int>("IncludedWaitingMinutes")
                         .ValueGeneratedOnAdd()
@@ -236,6 +304,131 @@ namespace Hagale.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("PricingRules", (string)null);
+                });
+
+            modelBuilder.Entity("Hagale.Domain.Rides.RideChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("RideRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SenderName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SenderRole")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("SenderUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("SentAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SenderUserId");
+
+                    b.HasIndex("RideRequestId", "SentAtUtc");
+
+                    b.ToTable("RideChatMessages", (string)null);
+                });
+
+            modelBuilder.Entity("Hagale.Domain.Rides.RideDriverOffer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DriverProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset>("OfferedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("OfferedPriceCop")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("ResolvedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("RideRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("SearchRound")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DriverProfileId", "Status", "ExpiresAtUtc");
+
+                    b.HasIndex("RideRequestId", "DriverProfileId", "SearchRound")
+                        .IsUnique();
+
+                    b.HasIndex("RideRequestId", "Status", "SearchRound");
+
+                    b.ToTable("RideDriverOffers", (string)null);
+                });
+
+            modelBuilder.Entity("Hagale.Domain.Rides.RideRating", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)");
+
+                    b.Property<DateTimeOffset>("RatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RatedRole")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("RaterRole")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("RaterUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RideRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RideRequestId", "RatedAtUtc");
+
+                    b.HasIndex("RideRequestId", "RaterUserId", "RaterRole")
+                        .IsUnique();
+
+                    b.ToTable("RideRatings", (string)null);
                 });
 
             modelBuilder.Entity("Hagale.Domain.Rides.RideRequest", b =>
@@ -304,6 +497,14 @@ namespace Hagale.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("MinimumFareCopAtRequest")
                         .HasColumnType("int");
+
+                    b.Property<int>("OfferSearchRound")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.Property<DateTimeOffset?>("OfferWindowEndsAtUtc")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("OperatingCityCode")
                         .IsRequired()
@@ -583,6 +784,34 @@ namespace Hagale.Infrastructure.Persistence.Migrations
                     b.ToTable("AuditLogs", (string)null);
                 });
 
+            modelBuilder.Entity("Hagale.Infrastructure.Persistence.StoredDocumentBlob", b =>
+                {
+                    b.Property<string>("StorageObjectKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("varbinary(max)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("StorageObjectKey");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.ToTable("StoredDocumentBlobs", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", b =>
                 {
                     b.Property<Guid>("Id")
@@ -746,6 +975,39 @@ namespace Hagale.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Hagale.Domain.Rides.RideChatMessage", b =>
+                {
+                    b.HasOne("Hagale.Domain.Rides.RideRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RideRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Hagale.Domain.Rides.RideDriverOffer", b =>
+                {
+                    b.HasOne("Hagale.Domain.Drivers.DriverProfile", null)
+                        .WithMany()
+                        .HasForeignKey("DriverProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Hagale.Domain.Rides.RideRequest", null)
+                        .WithMany("DriverOffers")
+                        .HasForeignKey("RideRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Hagale.Domain.Rides.RideRating", b =>
+                {
+                    b.HasOne("Hagale.Domain.Rides.RideRequest", null)
+                        .WithMany()
+                        .HasForeignKey("RideRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Hagale.Domain.Rides.RideRequest", b =>
                 {
                     b.HasOne("Hagale.Domain.Drivers.DriverProfile", null)
@@ -825,6 +1087,11 @@ namespace Hagale.Infrastructure.Persistence.Migrations
                     b.Navigation("Documents");
 
                     b.Navigation("Vehicles");
+                });
+
+            modelBuilder.Entity("Hagale.Domain.Rides.RideRequest", b =>
+                {
+                    b.Navigation("DriverOffers");
                 });
 #pragma warning restore 612, 618
         }

@@ -62,6 +62,38 @@ public static class DatabaseInitializer
                 ALTER TABLE "PricingRules"
                     ADD COLUMN IF NOT EXISTS "FavorableOfferMinimumPercent" integer NOT NULL DEFAULT 105;
                 """, cancellationToken);
+            // PostgreSQL/Neon utiliza EnsureCreated para esta demo. Estas
+            // sentencias mantienen compatibles las bases ya existentes al
+            // añadir el flujo de varias propuestas por solicitud.
+            await database.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE "RideRequests"
+                    ADD COLUMN IF NOT EXISTS "OfferWindowEndsAtUtc" timestamp with time zone NULL;
+                ALTER TABLE "RideRequests"
+                    ADD COLUMN IF NOT EXISTS "OfferSearchRound" integer NOT NULL DEFAULT 1;
+
+                CREATE TABLE IF NOT EXISTS "RideDriverOffers" (
+                    "Id" uuid NOT NULL,
+                    "RideRequestId" uuid NOT NULL,
+                    "DriverProfileId" uuid NOT NULL,
+                    "OfferedPriceCop" integer NOT NULL,
+                    "OfferedAtUtc" timestamp with time zone NOT NULL,
+                    "ExpiresAtUtc" timestamp with time zone NOT NULL,
+                    "SearchRound" integer NOT NULL,
+                    "Status" character varying(30) NOT NULL,
+                    "ResolvedAtUtc" timestamp with time zone NULL,
+                    CONSTRAINT "PK_RideDriverOffers" PRIMARY KEY ("Id"),
+                    CONSTRAINT "FK_RideDriverOffers_RideRequests_RideRequestId"
+                        FOREIGN KEY ("RideRequestId") REFERENCES "RideRequests" ("Id") ON DELETE CASCADE,
+                    CONSTRAINT "FK_RideDriverOffers_DriverProfiles_DriverProfileId"
+                        FOREIGN KEY ("DriverProfileId") REFERENCES "DriverProfiles" ("Id") ON DELETE RESTRICT
+                );
+                CREATE INDEX IF NOT EXISTS "IX_RideDriverOffers_RideRequestId_Status_SearchRound"
+                    ON "RideDriverOffers" ("RideRequestId", "Status", "SearchRound");
+                CREATE INDEX IF NOT EXISTS "IX_RideDriverOffers_DriverProfileId_Status_ExpiresAtUtc"
+                    ON "RideDriverOffers" ("DriverProfileId", "Status", "ExpiresAtUtc");
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_RideDriverOffers_RideRequestId_DriverProfileId_SearchRound"
+                    ON "RideDriverOffers" ("RideRequestId", "DriverProfileId", "SearchRound");
+                """, cancellationToken);
         }
 
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();

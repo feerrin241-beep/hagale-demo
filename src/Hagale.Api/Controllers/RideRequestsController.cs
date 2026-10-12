@@ -74,6 +74,52 @@ public sealed class RideRequestsController(IRideRequestService rideRequestServic
             : this.BusinessRuleViolation("rideRequest", result.Error!);
     }
 
+    [HttpGet("{rideRequestId:guid}/driver-offers")]
+    [ProducesResponseType<CustomerDriverOfferBoardDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult<CustomerDriverOfferBoardDto>> GetDriverOffers(
+        Guid rideRequestId,
+        CancellationToken cancellationToken)
+    {
+        var offers = await rideRequestService.GetDriverOffersForCustomerAsync(
+            User.GetRequiredUserId(),
+            rideRequestId,
+            cancellationToken);
+        return offers is null ? NoContent() : Ok(offers);
+    }
+
+    [HttpPost("{rideRequestId:guid}/driver-offers/{driverOfferId:guid}/select")]
+    [ProducesResponseType<RideRequestDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<RideRequestDto>> SelectDriverOffer(
+        Guid rideRequestId,
+        Guid driverOfferId,
+        CancellationToken cancellationToken)
+    {
+        var result = await rideRequestService.SelectDriverOfferAsync(
+            User.GetRequiredUserId(),
+            rideRequestId,
+            driverOfferId,
+            cancellationToken);
+        return result.IsSuccess
+            ? Ok(result.Value)
+            : this.BusinessRuleViolation("driverOffer", result.Error!);
+    }
+
+    [HttpPost("{rideRequestId:guid}/driver-offers/restart")]
+    [ProducesResponseType<RideRequestDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<RideRequestDto>> RestartDriverOfferCollection(
+        Guid rideRequestId,
+        CancellationToken cancellationToken)
+    {
+        var result = await rideRequestService.RestartOfferCollectionAsync(
+            User.GetRequiredUserId(),
+            rideRequestId,
+            cancellationToken);
+        return result.IsSuccess
+            ? Ok(result.Value)
+            : this.BusinessRuleViolation("driverOffer", result.Error!);
+    }
+
     [HttpPost("{rideRequestId:guid}/counter-offer/accept")]
     [ProducesResponseType<RideRequestDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<RideRequestDto>> AcceptCounterOffer(Guid rideRequestId, CancellationToken cancellationToken)

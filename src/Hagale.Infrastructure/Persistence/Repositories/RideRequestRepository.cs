@@ -10,7 +10,9 @@ public sealed class RideRequestRepository(HagaleDbContext database) : IRideReque
     public void Add(RideRequest rideRequest) => database.RideRequests.Add(rideRequest);
 
     public Task<RideRequest?> GetByIdAsync(Guid rideRequestId, CancellationToken cancellationToken = default) =>
-        database.RideRequests.SingleOrDefaultAsync(request => request.Id == rideRequestId, cancellationToken);
+        database.RideRequests
+            .Include(request => request.DriverOffers)
+            .SingleOrDefaultAsync(request => request.Id == rideRequestId, cancellationToken);
 
     public async Task<IReadOnlyCollection<RideRequest>> ListByCustomerUserIdAsync(
         Guid customerUserId,
@@ -24,6 +26,7 @@ public sealed class RideRequestRepository(HagaleDbContext database) : IRideReque
     public async Task<IReadOnlyCollection<RideRequest>> ListPendingAsync(CancellationToken cancellationToken = default) =>
         await database.RideRequests
             .AsNoTracking()
+            .Include(request => request.DriverOffers)
             .Where(request => request.Status == RideRequestStatus.Pending)
             .OrderBy(request => request.RequestedAtUtc)
             .ToArrayAsync(cancellationToken);

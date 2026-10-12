@@ -46,8 +46,12 @@ const state = {
   profile: null,
   application: null,
   rideRequests: [],
+  customerDriverOfferBoard: null,
+  customerOfferCountdownTimer: null,
   driverRideOffers: [],
   driverCurrentRideRequest: null,
+  driverPendingRideOffer: null,
+  driverPendingOfferCountdownTimer: null,
   driverCompletedRideRequests: [],
   driverActivitySummary: null,
   rideRatings: {},
@@ -1070,15 +1074,18 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
   const previousIds = new Set((state.driverRideOffers || []).map(offer => offer.id));
   const previousCurrentRideId = state.driverCurrentRideRequest?.id || null;
   const previousCurrentRideStatus = state.driverCurrentRideRequest?.status || null;
-  const [offers, currentRequest, application, activitySummary, completedRequests] = await Promise.all([
+  const previousPendingOfferId = state.driverPendingRideOffer?.pendingDriverOfferId || null;
+  const [offers, currentRequest, pendingOffer, application, activitySummary, completedRequests] = await Promise.all([
     request(getDispatchOffersUrl()),
     request("/driver/ride-requests/current"),
+    request("/driver/ride-requests/pending-offer"),
     request("/driver-application/me"),
     request("/driver/ride-requests/activity-summary"),
     request("/driver/ride-requests/completed")
   ]);
   state.driverRideOffers = offers;
   state.driverCurrentRideRequest = currentRequest;
+  state.driverPendingRideOffer = pendingOffer;
   state.driverCompletedRideRequests = completedRequests;
   state.application = application;
   state.driverActivitySummary = activitySummary;
@@ -1093,18 +1100,25 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
   const offerSetChanged = offers.length !== previousIds.size || offers.some(offer => !previousIds.has(offer.id));
   const currentRideChanged = currentRequest?.id !== previousCurrentRideId
     || currentRequest?.status !== previousCurrentRideStatus;
+  const pendingOfferChanged = pendingOffer?.pendingDriverOfferId !== previousPendingOfferId;
 
-  if (offerSetChanged || currentRideChanged) {
+  if (offerSetChanged || currentRideChanged || pendingOfferChanged) {
     renderDashboard();
   }
   if (newOfferCount > 0) {
     notifyDriverNewOffers(newOffers);
   }
+  if (currentRequest && currentRequest.id !== previousCurrentRideId && previousPendingOfferId) {
+    announceRideNotification("El pasajero eligió tu oferta. Dirígete al punto de recogida.", {
+      forceVoice: true,
+      forceSound: true
+    });
+  }
   // Los cambios de estado provocados por el propio conductor ya se confirman
   // con el botón y el aviso visual de la acción. No los repitas como una nueva
   // oferta hablada: eso hacía que "Conductor en camino" sonara dos veces.
 
-  return { offerSetChanged, currentRideChanged, newOfferCount };
+  return { offerSetChanged, currentRideChanged, pendingOfferChanged, newOfferCount };
 }
 
 function syncDispatchPolling(isDriverMode, driver) {
@@ -1787,6 +1801,98 @@ function getOpenCustomerRideRequest() {
     openCustomerRideStatuses.has(rideRequest.status)) || null;
 }
 
+function getCustomerOfferBoard(rideRequest) {
+  if (!rideRequest || state.customerDriverOfferBoard?.rideRequestId !== rideRequest.id) return null;
+  return state.customerDriverOfferBoard;
+}
+
+function getOfferSecondsRemaining(endsAtUtc) {
+  const endsAt = new Date(endsAtUtc || 0).getTime();
+  if (!Number.isFinite(endsAt) || endsAt <= 0) return 0;
+  return Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+}
+
+function getCustomerOfferBoardSignature(board) {
+  if (!board) return "";
+  return [
+    board.rideRequestId,
+    board.offerWindowEndsAtUtc,
+    board.searchRound,
+    board.isWindowOpen,
+    ...(board.offers || []).map(offer => `${offer.id}:${offer.offeredPriceCop}:${offer.averageRating}:${offer.estimatedPickupMinutes}`)
+  ].join("|");
+}
+
+async function refreshCustomerDriverOfferBoard(rideRequest = getOpenCustomerRideRequest()) {
+  if (!rideRequest || rideRequest.status !== "Pending") {
+    state.customerDriverOfferBoard = null;
+    return null;
+  }
+
+  const board = await request(`/ride-requests/${rideRequest.id}/driver-offers`);
+  state.customerDriverOfferBoard = board;
+  return board;
+}
+
+function updateCustomerOfferCountdownUi() {
+  const board = state.customerDriverOfferBoard;
+  const countdown = app.querySelector("[data-customer-offer-countdown]");
+  const progress = app.querySelector("[data-customer-offer-progress]");
+  if (!board || !countdown || !progress) return false;
+
+  const remaining = getOfferSecondsRemaining(board.offerWindowEndsAtUtc);
+  const total = 60;
+  const percent = Math.max(0, Math.min(100, Math.round((remaining / total) * 100)));
+  countdown.textContent = remaining > 0
+    ? `${remaining} s para elegir`
+    : "Ronda finalizada";
+  progress.style.width = `${percent}%`;
+  return remaining > 0 && Boolean(board.isWindowOpen);
+}
+
+function syncCustomerOfferCountdown() {
+  window.clearInterval(state.customerOfferCountdownTimer);
+  state.customerOfferCountdownTimer = null;
+
+  if (!updateCustomerOfferCountdownUi()) return;
+  state.customerOfferCountdownTimer = window.setInterval(() => {
+    if (updateCustomerOfferCountdownUi()) return;
+    window.clearInterval(state.customerOfferCountdownTimer);
+    state.customerOfferCountdownTimer = null;
+    void refreshCustomerRideStatus({ notifyJourneyChange: false }).catch(() => {
+      // El usuario conserva la última pantalla y puede actualizar manualmente.
+    });
+  }, 1_000);
+}
+
+function updateDriverPendingOfferCountdownUi() {
+  const offer = state.driverPendingRideOffer;
+  const countdown = app.querySelector("[data-driver-pending-offer-countdown]");
+  const progress = app.querySelector("[data-driver-pending-offer-progress]");
+  if (!offer || !countdown || !progress) return false;
+
+  const remaining = getOfferSecondsRemaining(offer.pendingDriverOfferExpiresAtUtc);
+  const percent = Math.max(0, Math.min(100, Math.round((remaining / 60) * 100)));
+  countdown.textContent = remaining > 0 ? `${remaining} s restantes` : "Ronda finalizada";
+  progress.style.width = `${percent}%`;
+  return remaining > 0;
+}
+
+function syncDriverPendingOfferCountdown() {
+  window.clearInterval(state.driverPendingOfferCountdownTimer);
+  state.driverPendingOfferCountdownTimer = null;
+
+  if (!updateDriverPendingOfferCountdownUi()) return;
+  state.driverPendingOfferCountdownTimer = window.setInterval(() => {
+    if (updateDriverPendingOfferCountdownUi()) return;
+    window.clearInterval(state.driverPendingOfferCountdownTimer);
+    state.driverPendingOfferCountdownTimer = null;
+    void refreshDriverDispatch({ announceNewOffers: false }).catch(() => {
+      // La actualización automática se reintentará con el siguiente ciclo.
+    });
+  }, 1_000);
+}
+
 function getRideSortTime(rideRequest) {
   return new Date(
     rideRequest.completedAtUtc
@@ -2245,11 +2351,21 @@ async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
   const previousOpenRide = getOpenCustomerRideRequest();
   const previousRideId = previousOpenRide?.id || null;
   const previousStatus = previousOpenRide?.status || null;
+  const previousOfferBoardSignature = getCustomerOfferBoardSignature(state.customerDriverOfferBoard);
+  const previousOfferIds = new Set((state.customerDriverOfferBoard?.offers || []).map(offer => offer.id));
   const requests = await request("/ride-requests/me");
   state.rideRequests = requests;
 
   const currentOpenRide = getOpenCustomerRideRequest();
   const journeyChanged = currentOpenRide?.id !== previousRideId || currentOpenRide?.status !== previousStatus;
+  if (currentOpenRide?.status === "Pending") {
+    await refreshCustomerDriverOfferBoard(currentOpenRide);
+  } else {
+    state.customerDriverOfferBoard = null;
+  }
+  const offerBoardChanged = getCustomerOfferBoardSignature(state.customerDriverOfferBoard) !== previousOfferBoardSignature;
+  const newlyReceivedOffers = (state.customerDriverOfferBoard?.offers || [])
+    .filter(offer => !previousOfferIds.has(offer.id));
 
   if (getActiveCustomerRide()) {
     await refreshCustomerRideTracking();
@@ -2268,9 +2384,17 @@ async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
     sessionStorage.setItem(customerNavKey, state.customerNav);
   }
 
-  if (journeyChanged) {
+  if (journeyChanged || offerBoardChanged) {
     renderDashboard();
-    if (notifyJourneyChange) {
+    if (notifyJourneyChange && newlyReceivedOffers.length > 0) {
+      announceRideNotification(
+        newlyReceivedOffers.length === 1
+          ? "Nueva propuesta de conductor recibida. Revisa el precio y el tiempo de llegada."
+          : `Llegaron ${newlyReceivedOffers.length} nuevas propuestas de conductores. Revísalas para elegir.`,
+        { forceSound: true }
+      );
+    }
+    if (notifyJourneyChange && journeyChanged) {
       const completedRide = currentOpenRide
         ? null
         : state.rideRequests.find(rideRequest => rideRequest.id === previousRideId && rideRequest.status === "Completed");
@@ -3411,25 +3535,36 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
     }
     state.application = application;
     state.rideRequests = rideRequests;
+    const pendingCustomerRide = state.profile.roles.includes("Customer")
+      ? getOpenCustomerRideRequest()
+      : null;
+    if (pendingCustomerRide?.status === "Pending") {
+      await refreshCustomerDriverOfferBoard(pendingCustomerRide);
+    } else {
+      state.customerDriverOfferBoard = null;
+    }
     if (state.profile.roles.includes("Customer")) {
       await refreshCustomerRideTracking();
     } else {
       state.customerRideTracking = null;
     }
     if (state.profile.roles.includes("Driver")) {
-      const [driverRideOffers, driverCurrentRideRequest, driverActivitySummary, driverCompletedRideRequests] = await Promise.all([
+      const [driverRideOffers, driverCurrentRideRequest, driverPendingRideOffer, driverActivitySummary, driverCompletedRideRequests] = await Promise.all([
         request(getDispatchOffersUrl()),
         request("/driver/ride-requests/current"),
+        request("/driver/ride-requests/pending-offer"),
         request("/driver/ride-requests/activity-summary"),
         request("/driver/ride-requests/completed")
       ]);
       state.driverRideOffers = driverRideOffers;
       state.driverCurrentRideRequest = driverCurrentRideRequest;
+      state.driverPendingRideOffer = driverPendingRideOffer;
       state.driverActivitySummary = driverActivitySummary;
       state.driverCompletedRideRequests = driverCompletedRideRequests;
     } else {
       state.driverRideOffers = [];
       state.driverCurrentRideRequest = null;
+      state.driverPendingRideOffer = null;
       state.driverCompletedRideRequests = [];
       state.driverActivitySummary = null;
     }
@@ -3620,13 +3755,16 @@ function renderDriverAvailabilitySlider(driver, compact = false) {
   const isApproved = driver?.status === "Approved";
   const isAvailable = driver?.availabilityStatus === "Available";
   const isBusy = driver?.availabilityStatus === "Busy";
+  const waitingForPassenger = Boolean(state.driverPendingRideOffer?.pendingDriverOfferId);
   const visibleOfferCount = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id)).length;
   const detail = isBusy
     ? "Viaje activo"
+    : waitingForPassenger
+      ? "Oferta enviada · esperando que el pasajero elija"
     : isAvailable
       ? String(visibleOfferCount) + (visibleOfferCount === 1 ? " solicitud cercana" : " solicitudes cercanas")
       : isApproved ? "No recibes solicitudes" : "Cuenta en revisión";
-  const locked = !isApproved || isBusy;
+  const locked = !isApproved || isBusy || waitingForPassenger;
   return '<div class="driver-status-control ' + (compact ? "is-compact" : "") + " " + (isBusy ? "is-journey" : isAvailable ? "is-free" : "is-occupied") + '" data-availability-slider data-availability-locked="' + (locked ? "true" : "false") + '">' +
     '<div class="driver-status-slider" role="group" aria-label="Disponibilidad del conductor">' +
       '<button class="driver-status-option driver-status-occupied ' + (!isAvailable ? "is-active" : "") + '" type="button" data-availability="Offline" ' + (locked ? "disabled" : "") + ' aria-pressed="' + (!isAvailable) + '"><span class="driver-status-dot" aria-hidden="true"></span><strong>' + escapeHtml(appearance.busyStatusLabel) + '</strong><small>No recibir</small></button>' +
@@ -3775,6 +3913,8 @@ function renderDashboard() {
   bindRideRatingEvents();
   syncDispatchPolling(isDriverMode, driver);
   syncCustomerTrackingPolling(!isDriverMode && profile.roles.includes("Customer"));
+  syncCustomerOfferCountdown();
+  syncDriverPendingOfferCountdown();
   syncRideRealtime();
   mountDriverMap();
   mountCustomerTrackingMap();
@@ -4124,6 +4264,11 @@ function renderDriverRideRequestsPanel() {
       </article>`;
   }
 
+  const pendingOffer = state.driverPendingRideOffer;
+  if (pendingOffer?.pendingDriverOfferId) {
+    return renderDriverPendingOfferPanel(pendingOffer);
+  }
+
   const offers = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id));
   const selectedOffer = offers.find(offer => offer.id === state.selectedDriverOfferId);
   const availabilityNotice = state.application?.availabilityStatus === "Available"
@@ -4156,6 +4301,25 @@ function renderDriverRideRequestsPanel() {
     </article>`;
 }
 
+function renderDriverPendingOfferPanel(offer) {
+  const offeredPrice = Number(offer.pendingDriverOfferPriceCop || offer.proposedPriceCop || 0);
+  return `
+    <article id="driver-requests" class="driver-pending-offer-card" data-reveal aria-live="polite">
+      <div class="driver-pending-offer-heading">
+        <div><span class="eyebrow">Oferta enviada</span><h2>Esperando elección</h2><p>El pasajero está comparando las propuestas recibidas. Todavía no debes desplazarte.</p></div>
+        <span class="driver-pending-offer-status">EN REVISIÓN</span>
+      </div>
+      <div class="driver-pending-offer-price"><span>Tu oferta</span><strong>${formatCop(offeredPrice)}</strong><small>${escapeHtml(getRidePaymentMethodLabel(offer))}</small></div>
+      <div class="driver-pending-offer-route" aria-label="Ruta de la oferta enviada">
+        <div><span class="route-letter route-letter-a">A</span><p><small>Recogida</small><strong>${formatDriverOfferAddress(offer.pickupAddress)}</strong></p></div>
+        <div><span class="route-letter route-letter-b">B</span><p><small>Destino</small><strong>${formatDriverOfferAddress(offer.destinationAddress)}</strong></p></div>
+      </div>
+      <div class="driver-pending-offer-timer"><strong data-driver-pending-offer-countdown>—</strong><div class="driver-pending-offer-timer-bar"><i data-driver-pending-offer-progress></i></div></div>
+      <p class="driver-pending-offer-note">Te avisaremos con sonido y voz si el pasajero elige tu propuesta. Mientras tanto, la oferta queda reservada para esta única solicitud.</p>
+      <div class="driver-pending-offer-actions"><button class="button button-secondary" type="button" data-refresh-dispatch>Actualizar estado</button><button class="button button-quiet" type="button" data-driver-nav="dispatch">Ver demanda</button></div>
+    </article>`;
+}
+
 function renderDriverOfferSheet(offer) {
   const classification = getDriverOfferClassification(offer);
   const appearance = getPlatformAppearance();
@@ -4167,7 +4331,7 @@ function renderDriverOfferSheet(offer) {
     .filter(price => Number.isFinite(price) && price > counterOfferBase);
   const counterOfferButtons = counterOfferSuggestions.map(price => `
     <button class="button driver-quick-counter-offer" type="button" data-quick-counter-offer="${escapeHtml(offer.id)}" data-counter-offer-price="${price}">
-      <span>Ofrecer</span><strong>${formatCop(price)}</strong>
+      <span>Enviar</span><strong>${formatCop(price)}</strong>
     </button>`).join("");
   return `
     <section class="driver-request-sheet" aria-label="Detalle de la solicitud seleccionada">
@@ -4178,9 +4342,9 @@ function renderDriverOfferSheet(offer) {
       </div>
       <div class="driver-offer-classification is-${classification.tone}" aria-label="Clasificación de la oferta">${classification.label}</div>
       <div class="driver-offer-action-stack">
-        <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}"><span>Aceptar por</span><strong>${formatCop(offer.proposedPriceCop)}</strong></button>
+        <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}"><span>Enviar oferta por</span><strong>${formatCop(offer.proposedPriceCop)}</strong></button>
         <div class="driver-counter-sheet" aria-label="Contraofertas rápidas">
-          <label>Contraofertas rápidas · suben de $500 en $500</label>
+          <label>Propuestas rápidas · suben de $500 en $500</label>
           <div class="driver-counter-options">${counterOfferButtons}</div>
         </div>
       </div>
@@ -4777,6 +4941,38 @@ function renderCustomerRideDetailsStep(activePricingRules) {
 }
 
 function renderCustomerSearchingPanel(rideRequest) {
+  const board = getCustomerOfferBoard(rideRequest);
+  const offers = board?.offers || [];
+  const windowOpen = Boolean(board?.isWindowOpen) && getOfferSecondsRemaining(board?.offerWindowEndsAtUtc) > 0;
+  const renderOffer = offer => {
+    const name = [offer.driverFirstName, offer.driverLastName].filter(Boolean).join(" ") || "Conductor HÁGALE";
+    const rating = Number(offer.averageRating);
+    const ratingText = Number.isFinite(rating) && rating > 0
+      ? `★ ${rating.toFixed(1)} · ${Number(offer.ratingCount) || 0} calificaciones`
+      : "Nuevo en HÁGALE";
+    const eta = Number(offer.estimatedPickupMinutes);
+    const etaText = Number.isFinite(eta) && eta > 0
+      ? `Llega aprox. en ${eta} min`
+      : "Tiempo de llegada por confirmar";
+    const vehicle = [offer.vehicleBrand, offer.vehicleModel, offer.vehicleColor]
+      .filter(Boolean)
+      .join(" · ");
+    return `
+      <article class="customer-driver-offer-card" aria-label="Oferta de ${escapeHtml(name)} por ${formatCop(offer.offeredPriceCop)}">
+        <div class="customer-driver-offer-avatar" aria-hidden="true">${escapeHtml(name.split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase() || "H")}</div>
+        <div class="customer-driver-offer-copy">
+          <div class="customer-driver-offer-name"><h4>${escapeHtml(name)}</h4><span>${escapeHtml(ratingText)}</span></div>
+          <p>${escapeHtml(vehicle || label[offer.vehicleType] || "Moto")}</p>
+          <small>${escapeHtml(formatPickupProximity(offer.pickupDistanceKilometers))} · ${escapeHtml(etaText)}</small>
+        </div>
+        <div class="customer-driver-offer-price"><strong>${formatCop(offer.offeredPriceCop)}</strong><button class="button customer-offer-pick-button" type="button" data-select-driver-offer="${offer.id}" data-select-driver-offer-ride="${rideRequest.id}">Elegir</button></div>
+      </article>`;
+  };
+  const offerContent = offers.length
+    ? `<div class="customer-driver-offer-list">${offers.map(renderOffer).join("")}</div>`
+    : windowOpen
+      ? `<div class="customer-offer-empty"><strong>Aún no hay propuestas</strong><span>Estamos mostrando tu solicitud a conductores cercanos.</span></div>`
+      : `<div class="customer-offer-empty is-finished"><strong>La ronda terminó</strong><span>Puedes abrir otra ronda para recibir propuestas nuevas.</span><button class="button button-primary" type="button" data-restart-driver-offers="${rideRequest.id}">Buscar más conductores</button></div>`;
   return `
     <section class="customer-search-card" aria-live="polite">
       <div class="customer-search-map" aria-hidden="true">
@@ -4787,14 +4983,15 @@ function renderCustomerSearchingPanel(rideRequest) {
       <div class="customer-search-content">
         ${renderCustomerRideStepIndicator("search")}
         <span class="eyebrow">Pantalla 3 · despacho</span>
-        <h3>Buscando conductor</h3>
-        <p class="customer-search-lead">Tu solicitud ya fue enviada. HÁGALE la mostrará aquí cuando un conductor la vea o acepte.</p>
+        <h3>Elige tu conductor</h3>
+        <p class="customer-search-lead">Compara precio, cercanía, llegada y calificación. La carrera solo se confirma cuando eliges una propuesta.</p>
         <div class="customer-search-route">
           <div><span class="route-letter route-letter-a">A</span><strong>${escapeHtml(rideRequest.pickupAddress)}</strong></div>
           <div><span class="route-letter route-letter-b">B</span><strong>${escapeHtml(rideRequest.destinationAddress)}</strong></div>
         </div>
-        <div class="customer-search-progress"><div><span>Despacho activo</span><strong>Esperando respuestas</strong></div><span class="customer-search-progress-track"><i></i></span></div>
-        <div class="customer-search-offer"><span>Oferta enviada</span><strong>${formatCop(rideRequest.proposedPriceCop)}</strong><small>${escapeHtml(getRidePaymentMethodLabel(rideRequest))} · ${escapeHtml(getRideFareModeLabel(rideRequest))}</small></div>
+        <div class="customer-offer-progress"><div><span>${offers.length === 1 ? "1 propuesta recibida" : `${offers.length} propuestas recibidas`}</span><strong data-customer-offer-countdown>${windowOpen ? "—" : "Ronda finalizada"}</strong></div><span class="customer-offer-progress-track"><i data-customer-offer-progress></i></span></div>
+        ${offerContent}
+        <div class="customer-search-offer"><span>Tu valor inicial</span><strong>${formatCop(rideRequest.proposedPriceCop)}</strong><small>${escapeHtml(getRidePaymentMethodLabel(rideRequest))} · ${escapeHtml(getRideFareModeLabel(rideRequest))}</small></div>
         <div class="customer-search-actions">
           <button class="button button-secondary small" type="button" data-refresh-customer-status>Actualizar estado</button>
           <button class="button button-danger small" type="button" data-cancel-ride="${rideRequest.id}">Cancelar solicitud</button>
@@ -5496,6 +5693,15 @@ function bindDriverEvents() {
   app.querySelectorAll("[data-cancel-ride]").forEach(button => {
     button.addEventListener("click", () => cancelRideRequest(button.dataset.cancelRide));
   });
+  app.querySelectorAll("[data-select-driver-offer]").forEach(button => {
+    button.addEventListener("click", () => selectCustomerDriverOffer(
+      button.dataset.selectDriverOfferRide,
+      button.dataset.selectDriverOffer
+    ));
+  });
+  app.querySelectorAll("[data-restart-driver-offers]").forEach(button => {
+    button.addEventListener("click", () => restartCustomerDriverOffers(button.dataset.restartDriverOffers));
+  });
   app.querySelectorAll("[data-accept-ride]").forEach(button => {
     button.addEventListener("click", () => acceptRideRequest(button.dataset.acceptRide));
   });
@@ -5791,6 +5997,7 @@ async function createRideRequest(event) {
       data
     });
     state.rideRequests = [rideRequest, ...state.rideRequests];
+    await refreshCustomerDriverOfferBoard(rideRequest);
     state.pendingPickupLocation = null;
     state.pendingDestinationLocation = null;
     state.customerRideQuote = null;
@@ -5830,6 +6037,7 @@ async function cancelRideRequest(rideRequestId) {
       data: { reason: null }
     });
     state.rideRequests = state.rideRequests.map(request => request.id === updated.id ? updated : request);
+    state.customerDriverOfferBoard = null;
     await refreshCustomerRideTracking();
     state.customerNav = "history";
     sessionStorage.setItem(customerNavKey, state.customerNav);
@@ -5838,22 +6046,54 @@ async function cancelRideRequest(rideRequestId) {
   } catch (error) { showNotice(error.message, true); }
 }
 
-async function acceptRideRequest(rideRequestId, source = "button") {
-  stopDriverVoiceAcceptance();
+async function selectCustomerDriverOffer(rideRequestId, driverOfferId) {
+  if (!rideRequestId || !driverOfferId) return;
   try {
-    state.driverCurrentRideRequest = await request(`/driver/ride-requests/${rideRequestId}/accept`, {
+    const updated = await request(`/ride-requests/${rideRequestId}/driver-offers/${driverOfferId}/select`, {
       method: "POST",
       data: {}
     });
+    state.rideRequests = state.rideRequests.map(request => request.id === updated.id ? updated : request);
+    state.customerDriverOfferBoard = null;
+    state.customerNav = "tracking";
+    sessionStorage.setItem(customerNavKey, state.customerNav);
+    await refreshCustomerRideTracking({ notifyJourneyChange: false });
+    renderDashboard();
+    announceCustomerJourneyUpdate(updated, "Accepted");
+    showNotice("Conductor elegido. Ya puedes ver el seguimiento de tu servicio.");
+  } catch (error) { showNotice(error.message || "No fue posible elegir esa propuesta.", true); }
+}
+
+async function restartCustomerDriverOffers(rideRequestId) {
+  if (!rideRequestId) return;
+  try {
+    const updated = await request(`/ride-requests/${rideRequestId}/driver-offers/restart`, {
+      method: "POST",
+      data: {}
+    });
+    state.rideRequests = state.rideRequests.map(request => request.id === updated.id ? updated : request);
+    await refreshCustomerDriverOfferBoard(updated);
+    renderDashboard();
+    showNotice("Nueva ronda iniciada. Recibirás propuestas cercanas durante un minuto.");
+  } catch (error) { showNotice(error.message || "No fue posible buscar nuevos conductores.", true); }
+}
+
+async function acceptRideRequest(rideRequestId, source = "button") {
+  stopDriverVoiceAcceptance();
+  try {
+    state.driverPendingRideOffer = await request(`/driver/ride-requests/${rideRequestId}/accept`, {
+      method: "POST",
+      data: {}
+    });
+    state.driverCurrentRideRequest = null;
     state.selectedDriverOfferId = null;
     state.driverNav = "requests";
-    state.driverRideOffers = state.driverRideOffers.filter(offer => offer.id !== rideRequestId);
+    state.driverRideOffers = [];
     state.application = await request("/driver-application/me");
     renderDashboard();
-    speakDriverAlert(buildDriverRouteVoiceMessage(state.driverCurrentRideRequest), true);
     showNotice(source === "voice"
-      ? "Servicio aceptado por voz. Pasaste al panel de servicio activo."
-      : "Solicitud aceptada. Pasaste al panel de servicio activo.");
+      ? "Oferta enviada por voz. Espera a que el pasajero elija conductor."
+      : "Oferta enviada. El pasajero podrá compararla y elegirla.");
   } catch (error) { showNotice(error.message, true); }
 }
 
@@ -5864,10 +6104,11 @@ async function sendCounterOffer(rideRequestId, priceCop) {
     return;
   }
   try {
-    state.driverCurrentRideRequest = await request(`/driver/ride-requests/${rideRequestId}/counter-offer`, {
+    state.driverPendingRideOffer = await request(`/driver/ride-requests/${rideRequestId}/counter-offer`, {
       method: "POST",
       data: { priceCop: normalizedPrice }
     });
+    state.driverCurrentRideRequest = null;
     state.selectedDriverOfferId = null;
     state.driverRideOffers = [];
     state.application = await request("/driver-application/me");
@@ -6080,14 +6321,20 @@ function signOut(notify = true) {
   }
   window.clearInterval(state.dispatchPollingTimer);
   window.clearInterval(state.customerTrackingPollingTimer);
+  window.clearInterval(state.customerOfferCountdownTimer);
+  window.clearInterval(state.driverPendingOfferCountdownTimer);
   state.dispatchPollingTimer = null;
   state.customerTrackingPollingTimer = null;
+  state.customerOfferCountdownTimer = null;
+  state.driverPendingOfferCountdownTimer = null;
   state.token = null;
   state.profile = null;
   state.application = null;
   state.rideRequests = [];
+  state.customerDriverOfferBoard = null;
   state.driverRideOffers = [];
   state.driverCurrentRideRequest = null;
+  state.driverPendingRideOffer = null;
   state.driverCompletedRideRequests = [];
   state.driverActivitySummary = null;
   state.rideRatings = {};

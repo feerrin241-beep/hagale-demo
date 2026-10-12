@@ -4,6 +4,14 @@ namespace Hagale.Domain.Rides;
 
 public sealed class RideRequest
 {
+    /// <summary>
+    /// El pasajero dispone de una ventana corta para comparar las propuestas
+    /// cercanas. Puede abrir una nueva ronda si no elige ninguna.
+    /// </summary>
+    public const int OfferCollectionWindowSeconds = 60;
+
+    private readonly List<RideDriverOffer> _driverOffers = [];
+
     private RideRequest()
     {
     }
@@ -129,6 +137,7 @@ public sealed class RideRequest
         DestinationLatitude = destinationLatitude;
         DestinationLongitude = destinationLongitude;
         RequestedAtUtc = requestedAtUtc;
+        OfferWindowEndsAtUtc = requestedAtUtc.AddSeconds(OfferCollectionWindowSeconds);
     }
 
     public Guid Id { get; private set; }
@@ -152,6 +161,9 @@ public sealed class RideRequest
     public Guid? AssignedDriverProfileId { get; private set; }
     public int? CounterOfferPriceCop { get; private set; }
     public DateTimeOffset? CounterOfferAtUtc { get; private set; }
+    public DateTimeOffset? OfferWindowEndsAtUtc { get; private set; }
+    public int OfferSearchRound { get; private set; } = 1;
+    public IReadOnlyCollection<RideDriverOffer> DriverOffers => _driverOffers.AsReadOnly();
     public DateTimeOffset? AcceptedAtUtc { get; private set; }
     public DateTimeOffset? DriverEnRouteAtUtc { get; private set; }
     public DateTimeOffset? DriverArrivedAtUtc { get; private set; }
@@ -177,10 +189,119 @@ public sealed class RideRequest
             throw new DomainRuleViolationException("Esta solicitud ya no está disponible para aceptación.");
         }
 
+        var existingOffer = _driverOffers.FirstOrDefault(offer =>
+            offer.DriverProfileId == driverProfileId && offer.Status == RideDriverOfferStatus.Pending);
+        existingOffer?.Select(acceptedAtUtc);
         AssignedDriverProfileId = driverProfileId;
+        ClosePendingDriverOffers(acceptedAtUtc, driverProfileId);
         AcceptedAtUtc = acceptedAtUtc;
         Status = RideRequestStatus.Accepted;
     }
+
+    /// <summary>
+    /// Registra una propuesta para que el cliente la compare; no asigna ni
+    /// bloquea el servicio hasta que el cliente elija al conductor.
+    /// </summary>
+    public RideDriverOffer AddDriverOffer(Guid driverProfileId, int priceCop, DateTimeOffset offeredAtUtc)
+    {
+        if (driverProfileId == Guid.Empty)
+        {
+            throw new DomainRuleViolationException("La oferta debe identificar a un conductor válido.");
+        }
+
+        if (Status != RideRequestStatus.Pending)
+        {
+            throw new DomainRuleViolationException("Esta solicitud ya no está disponible para recibir ofertas.");
+        }
+
+        if (!IsOfferWindowOpenAt(offeredAtUtc))
+        {
+            throw new DomainRuleViolationException("El tiempo para recibir ofertas terminó. El pasajero puede buscar conductores nuevamente.");
+        }
+
+        if (priceCop < MinimumFareCopAtRequest)
+        {
+            throw new DomainRuleViolationException("La oferta no puede ser inferior a la tarifa mínima vigente.");
+        }
+
+        if (_driverOffers.Any(offer =>
+                offer.DriverProfileId == driverProfileId &&
+                offer.SearchRound == OfferSearchRound &&
+                offer.Status == RideDriverOfferStatus.Pending))
+        {
+            throw new DomainRuleViolationException("Ya enviaste una oferta para esta solicitud.");
+        }
+
+        var offer = new RideDriverOffer(
+            Id,
+            driverProfileId,
+            priceCop,
+            offeredAtUtc,
+            GetOfferWindowEndUtc(),
+            OfferSearchRound);
+        _driverOffers.Add(offer);
+        return offer;
+    }
+
+    /// <summary>
+    /// El cliente elige una de las ofertas. Las demás se cierran en la misma
+    /// operación para que un conductor no quede esperando una carrera ya tomada.
+    /// </summary>
+    public RideDriverOffer SelectDriverOffer(Guid offerId, DateTimeOffset selectedAtUtc)
+    {
+        if (Status != RideRequestStatus.Pending)
+        {
+            throw new DomainRuleViolationException("Esta solicitud ya no está disponible para seleccionar una oferta.");
+        }
+
+        if (!IsOfferWindowOpenAt(selectedAtUtc))
+        {
+            throw new DomainRuleViolationException("El tiempo para elegir una oferta terminó. Puedes buscar conductores nuevamente.");
+        }
+
+        var selectedOffer = _driverOffers.SingleOrDefault(offer => offer.Id == offerId);
+        if (selectedOffer is null || selectedOffer.SearchRound != OfferSearchRound || !selectedOffer.IsPendingAt(selectedAtUtc))
+        {
+            throw new DomainRuleViolationException("Esta oferta ya no está disponible. Actualiza las propuestas recibidas.");
+        }
+
+        selectedOffer.Select(selectedAtUtc);
+        ClosePendingDriverOffers(selectedAtUtc, selectedOffer.DriverProfileId);
+        AssignedDriverProfileId = selectedOffer.DriverProfileId;
+        ProposedPriceCop = selectedOffer.OfferedPriceCop;
+        AcceptedAtUtc = selectedAtUtc;
+        CounterOfferPriceCop = null;
+        CounterOfferAtUtc = null;
+        Status = RideRequestStatus.Accepted;
+        return selectedOffer;
+    }
+
+    /// <summary>
+    /// Cierra la ronda anterior y abre una nueva búsqueda de conductores.
+    /// </summary>
+    public void RestartOfferCollection(DateTimeOffset restartedAtUtc)
+    {
+        if (Status != RideRequestStatus.Pending)
+        {
+            throw new DomainRuleViolationException("Solo una solicitud pendiente puede buscar conductores nuevamente.");
+        }
+
+        ClosePendingDriverOffers(restartedAtUtc);
+        OfferSearchRound++;
+        OfferWindowEndsAtUtc = restartedAtUtc.AddSeconds(OfferCollectionWindowSeconds);
+    }
+
+    public bool IsOfferWindowOpenAt(DateTimeOffset atUtc) =>
+        Status == RideRequestStatus.Pending && atUtc < GetOfferWindowEndUtc();
+
+    public DateTimeOffset GetOfferWindowEndUtc() =>
+        OfferWindowEndsAtUtc ?? RequestedAtUtc.AddSeconds(OfferCollectionWindowSeconds);
+
+    public bool HasPendingOfferFromDriver(Guid driverProfileId, DateTimeOffset atUtc) =>
+        _driverOffers.Any(offer =>
+            offer.DriverProfileId == driverProfileId &&
+            offer.SearchRound == OfferSearchRound &&
+            offer.IsPendingAt(atUtc));
 
     public void MakeCounterOffer(Guid driverProfileId, int priceCop, DateTimeOffset offeredAtUtc)
     {
@@ -285,6 +406,7 @@ public sealed class RideRequest
             throw new DomainRuleViolationException("Solo una solicitud pendiente o con contraoferta puede cancelarse.");
         }
 
+        ClosePendingDriverOffers(cancelledAtUtc);
         Status = RideRequestStatus.Cancelled;
         CancelledAtUtc = cancelledAtUtc;
         CancellationReason = NormalizeOptionalReason(reason);
@@ -351,6 +473,19 @@ public sealed class RideRequest
         AssignedDriverProfileId = null;
         CounterOfferPriceCop = null;
         CounterOfferAtUtc = null;
+    }
+
+    private void ClosePendingDriverOffers(DateTimeOffset resolvedAtUtc, Guid? selectedDriverProfileId = null)
+    {
+        foreach (var offer in _driverOffers.Where(offer => offer.Status == RideDriverOfferStatus.Pending))
+        {
+            if (selectedDriverProfileId.HasValue && offer.DriverProfileId == selectedDriverProfileId.Value)
+            {
+                continue;
+            }
+
+            offer.Decline(resolvedAtUtc);
+        }
     }
 
     private static string NormalizeCityCode(string value)

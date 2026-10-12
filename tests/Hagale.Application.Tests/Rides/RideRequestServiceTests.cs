@@ -1,4 +1,5 @@
 using Hagale.Application.Contracts;
+using Hagale.Application.Common;
 using Hagale.Application.Rides;
 using Hagale.Domain.Pricing;
 using Hagale.Domain.Drivers;
@@ -191,7 +192,7 @@ public sealed class RideRequestServiceTests
     }
 
     [Fact]
-    public async Task Available_approved_driver_can_accept_one_compatible_request()
+    public async Task Available_approved_driver_can_send_an_offer_and_customer_can_select_it()
     {
         var customerUserId = Guid.NewGuid();
         var driverUserId = Guid.NewGuid();
@@ -216,16 +217,28 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId),
             TimeProvider.System);
 
-        var accepted = await service.AcceptAsync(driverUserId, request.Id);
+        var offered = await service.AcceptAsync(driverUserId, request.Id);
 
-        Assert.True(accepted.IsSuccess);
+        Assert.True(offered.IsSuccess);
+        Assert.Equal(RideRequestStatus.Pending, request.Status);
+        Assert.Equal(DriverAvailabilityStatus.Available, driver.AvailabilityStatus);
+        Assert.NotNull(offered.Value!.PendingDriverOfferId);
+        Assert.Equal(3_500, offered.Value.PendingDriverOfferPriceCop);
+        Assert.Empty(await service.ListAvailableForDriverAsync(driverUserId));
+
+        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
+        var offer = Assert.Single(board!.Offers);
+        Assert.Equal(3_500, offer.OfferedPriceCop);
+
+        var selected = await service.SelectDriverOfferAsync(customerUserId, request.Id, offer.Id);
+
+        Assert.True(selected.IsSuccess);
         Assert.Equal(RideRequestStatus.Accepted, request.Status);
         Assert.Equal(DriverAvailabilityStatus.Busy, driver.AvailabilityStatus);
-        Assert.Empty(await service.ListAvailableForDriverAsync(driverUserId));
     }
 
     [Fact]
-    public async Task Assigning_and_advancing_a_service_notifies_only_its_participants()
+    public async Task Selecting_and_advancing_a_service_notifies_only_its_participants()
     {
         var customerUserId = Guid.NewGuid();
         var driverUserId = Guid.NewGuid();
@@ -251,9 +264,20 @@ public sealed class RideRequestServiceTests
             TimeProvider.System,
             notifier);
 
-        var accepted = await service.AcceptAsync(driverUserId, request.Id);
+        var offered = await service.AcceptAsync(driverUserId, request.Id);
 
-        Assert.True(accepted.IsSuccess);
+        Assert.True(offered.IsSuccess);
+        var offerNotice = Assert.Single(notifier.RideChanges);
+        Assert.Equal(customerUserId, offerNotice.CustomerUserId);
+        Assert.Null(offerNotice.DriverUserId);
+        Assert.Equal(request.Id, offerNotice.RideRequestId);
+        Assert.Single(notifier.DispatchChanges);
+
+        notifier.Clear();
+        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
+        var selected = await service.SelectDriverOfferAsync(customerUserId, request.Id, Assert.Single(board!.Offers).Id);
+
+        Assert.True(selected.IsSuccess);
         var assignmentNotice = Assert.Single(notifier.RideChanges);
         Assert.Equal(customerUserId, assignmentNotice.CustomerUserId);
         Assert.Equal(driverUserId, assignmentNotice.DriverUserId);
@@ -455,7 +479,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId, driverUserId),
             TimeProvider.System);
 
-        var accepted = await service.AcceptAsync(driverUserId, request.Id);
+        var accepted = await SendOfferAndSelectAsync(service, customerUserId, driverUserId, request.Id);
         driver.UpdateCurrentLocation(7.1222m, -73.1211m, DateTimeOffset.UtcNow);
         var tracking = await service.GetTrackingForCustomerAsync(customerUserId, request.Id);
         var otherCustomerTracking = await service.GetTrackingForCustomerAsync(Guid.NewGuid(), request.Id);
@@ -512,7 +536,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(Guid.NewGuid()),
             TimeProvider.System);
 
-        await service.AcceptAsync(driverUserId, request.Id);
+        await SendOfferAndSelectAsync(service, request.CustomerUserId, driverUserId, request.Id);
         var enRoute = await service.MarkDriverEnRouteAsync(driverUserId, request.Id);
         var arrived = await service.MarkDriverArrivedAsync(driverUserId, request.Id);
         var started = await service.StartAsync(driverUserId, request.Id);
@@ -582,12 +606,12 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(Guid.NewGuid()),
             TimeProvider.System);
 
-        await service.AcceptAsync(driverUserId, completedRequest.Id);
+        await SendOfferAndSelectAsync(service, completedRequest.CustomerUserId, driverUserId, completedRequest.Id);
         await service.MarkDriverEnRouteAsync(driverUserId, completedRequest.Id);
         await service.MarkDriverArrivedAsync(driverUserId, completedRequest.Id);
         await service.StartAsync(driverUserId, completedRequest.Id);
         await service.CompleteAsync(driverUserId, completedRequest.Id);
-        await service.AcceptAsync(driverUserId, nequiCompletedRequest.Id);
+        await SendOfferAndSelectAsync(service, nequiCompletedRequest.CustomerUserId, driverUserId, nequiCompletedRequest.Id);
         await service.MarkDriverEnRouteAsync(driverUserId, nequiCompletedRequest.Id);
         await service.MarkDriverArrivedAsync(driverUserId, nequiCompletedRequest.Id);
         await service.StartAsync(driverUserId, nequiCompletedRequest.Id);
@@ -606,10 +630,11 @@ public sealed class RideRequestServiceTests
     }
 
     [Fact]
-    public async Task Customer_can_accept_a_counter_offer_from_a_compatible_driver()
+    public async Task Customer_can_compare_multiple_driver_offers_and_select_the_preferred_driver()
     {
         var customerUserId = Guid.NewGuid();
-        var driverUserId = Guid.NewGuid();
+        var firstDriverUserId = Guid.NewGuid();
+        var preferredDriverUserId = Guid.NewGuid();
         var request = new RideRequest(
             customerUserId,
             "Calle 72 # 10-07, Bucaramanga",
@@ -621,9 +646,11 @@ public sealed class RideRequestServiceTests
             DateTimeOffset.UtcNow);
         var rideRepository = new InMemoryRideRequestRepository();
         rideRepository.Add(request);
-        var driver = CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle);
+        var firstDriver = CreateAvailableDriver(firstDriverUserId, "BUC", VehicleType.Motorcycle);
+        var preferredDriver = CreateAvailableDriver(preferredDriverUserId, "BUC", VehicleType.Motorcycle);
         var driverRepository = new InMemoryDriverRepository();
-        driverRepository.Add(driver);
+        driverRepository.Add(firstDriver);
+        driverRepository.Add(preferredDriver);
         var service = new RideRequestService(
             rideRepository,
             new InMemoryPricingRuleRepository(),
@@ -631,18 +658,29 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId),
             TimeProvider.System);
 
-        var offered = await service.MakeCounterOfferAsync(driverUserId, request.Id, new CreateCounterOfferCommand(4_200));
-        var accepted = await service.AcceptCounterOfferAsync(customerUserId, request.Id);
+        var firstOffer = await service.MakeCounterOfferAsync(firstDriverUserId, request.Id, new CreateCounterOfferCommand(4_200));
+        var preferredOffer = await service.MakeCounterOfferAsync(preferredDriverUserId, request.Id, new CreateCounterOfferCommand(4_700));
+        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
 
-        Assert.True(offered.IsSuccess);
+        Assert.True(firstOffer.IsSuccess);
+        Assert.True(preferredOffer.IsSuccess);
+        Assert.Equal(RideRequestStatus.Pending, request.Status);
+        Assert.Equal(DriverAvailabilityStatus.Available, firstDriver.AvailabilityStatus);
+        Assert.Equal(DriverAvailabilityStatus.Available, preferredDriver.AvailabilityStatus);
+        Assert.Equal([4_200, 4_700], board!.Offers.Select(offer => offer.OfferedPriceCop));
+
+        var selectedOffer = Assert.Single(board.Offers, offer => offer.OfferedPriceCop == 4_700);
+        var accepted = await service.SelectDriverOfferAsync(customerUserId, request.Id, selectedOffer.Id);
+
         Assert.True(accepted.IsSuccess);
         Assert.Equal(RideRequestStatus.Accepted, request.Status);
-        Assert.Equal(4_200, request.ProposedPriceCop);
-        Assert.Equal(DriverAvailabilityStatus.Busy, driver.AvailabilityStatus);
+        Assert.Equal(4_700, request.ProposedPriceCop);
+        Assert.Equal(DriverAvailabilityStatus.Available, firstDriver.AvailabilityStatus);
+        Assert.Equal(DriverAvailabilityStatus.Busy, preferredDriver.AvailabilityStatus);
     }
 
     [Fact]
-    public async Task Rejecting_counter_offer_makes_the_request_and_driver_available_again()
+    public async Task Driver_cannot_send_a_second_live_offer_while_waiting_for_customer_selection()
     {
         var customerUserId = Guid.NewGuid();
         var driverUserId = Guid.NewGuid();
@@ -655,8 +693,18 @@ public sealed class RideRequestServiceTests
             3_500,
             3_500,
             DateTimeOffset.UtcNow);
+        var anotherRequest = new RideRequest(
+            Guid.NewGuid(),
+            "Carrera 33 # 48-16, Bucaramanga",
+            "Calle 56 # 27-45, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            3_500,
+            3_500,
+            DateTimeOffset.UtcNow);
         var rideRepository = new InMemoryRideRequestRepository();
         rideRepository.Add(request);
+        rideRepository.Add(anotherRequest);
         var driver = CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle);
         var driverRepository = new InMemoryDriverRepository();
         driverRepository.Add(driver);
@@ -667,13 +715,34 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId),
             TimeProvider.System);
 
-        await service.MakeCounterOfferAsync(driverUserId, request.Id, new CreateCounterOfferCommand(4_200));
-        var rejected = await service.RejectCounterOfferAsync(customerUserId, request.Id);
+        var firstOffer = await service.MakeCounterOfferAsync(driverUserId, request.Id, new CreateCounterOfferCommand(4_200));
+        var secondOffer = await service.MakeCounterOfferAsync(driverUserId, anotherRequest.Id, new CreateCounterOfferCommand(4_200));
+        var pendingOffer = await service.GetPendingOfferForDriverAsync(driverUserId);
 
-        Assert.True(rejected.IsSuccess);
+        Assert.True(firstOffer.IsSuccess);
+        Assert.False(secondOffer.IsSuccess);
+        Assert.Contains("esperando la elección", secondOffer.Error!);
         Assert.Equal(RideRequestStatus.Pending, request.Status);
         Assert.Equal(DriverAvailabilityStatus.Available, driver.AvailabilityStatus);
-        Assert.Null(request.CounterOfferPriceCop);
+        Assert.NotNull(pendingOffer);
+        Assert.Equal(request.Id, pendingOffer!.Id);
+        Assert.Equal(4_200, pendingOffer.PendingDriverOfferPriceCop);
+    }
+
+    private static async Task<ApplicationResult<RideRequestDto>> SendOfferAndSelectAsync(
+        RideRequestService service,
+        Guid customerUserId,
+        Guid driverUserId,
+        Guid rideRequestId)
+    {
+        var offered = await service.AcceptAsync(driverUserId, rideRequestId);
+        Assert.True(offered.IsSuccess);
+
+        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, rideRequestId);
+        var offer = Assert.Single(board!.Offers);
+        var selected = await service.SelectDriverOfferAsync(customerUserId, rideRequestId, offer.Id);
+        Assert.True(selected.IsSuccess);
+        return selected;
     }
 
     private sealed class ExistingUserDirectory : IUserDirectory

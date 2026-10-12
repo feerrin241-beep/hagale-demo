@@ -31,6 +31,15 @@ public sealed class DriverRideRequestsController(IRideRequestService rideRequest
         return request is null ? NoContent() : Ok(request);
     }
 
+    [HttpGet("pending-offer")]
+    [ProducesResponseType<DriverRideRequestDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<ActionResult<DriverRideRequestDto>> GetPendingOffer(CancellationToken cancellationToken)
+    {
+        var offer = await rideRequestService.GetPendingOfferForDriverAsync(User.GetRequiredUserId(), cancellationToken);
+        return offer is null ? NoContent() : Ok(offer);
+    }
+
     [HttpGet("completed")]
     [ProducesResponseType<IReadOnlyCollection<DriverRideRequestDto>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<DriverRideRequestDto>>> ListCompleted(CancellationToken cancellationToken) =>

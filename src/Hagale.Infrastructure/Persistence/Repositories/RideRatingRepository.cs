@@ -28,6 +28,24 @@ public sealed class RideRatingRepository(HagaleDbContext database) : IRideRating
             .OrderBy(rating => rating.RatedAtUtc)
             .ToArrayAsync(cancellationToken);
 
+    public async Task<DriverRatingSummary> GetDriverSummaryAsync(
+        Guid driverProfileId,
+        CancellationToken cancellationToken = default)
+    {
+        var scores = await (
+            from rating in database.RideRatings.AsNoTracking()
+            join ride in database.RideRequests.AsNoTracking() on rating.RideRequestId equals ride.Id
+            where ride.AssignedDriverProfileId == driverProfileId && rating.RatedRole == "Driver"
+            select rating.Score
+        ).ToArrayAsync(cancellationToken);
+
+        return scores.Length == 0
+            ? new DriverRatingSummary(null, 0)
+            : new DriverRatingSummary(
+                decimal.Round(scores.Average(score => (decimal)score), 1, MidpointRounding.AwayFromZero),
+                scores.Length);
+    }
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         database.SaveChangesAsync(cancellationToken);
 }

@@ -52,7 +52,9 @@ public sealed record RideRequestDto(
     decimal? PickupLatitude,
     decimal? PickupLongitude,
     decimal? DestinationLatitude,
-    decimal? DestinationLongitude);
+    decimal? DestinationLongitude,
+    DateTimeOffset? OfferWindowEndsAtUtc = null,
+    int OfferSearchRound = 1);
 
 public sealed record DriverRideRequestDto(
     Guid Id,
@@ -88,7 +90,37 @@ public sealed record DriverRideRequestDto(
     decimal? DestinationLatitude,
     decimal? DestinationLongitude,
     int FairOfferMinimumPercent = PricingRule.DefaultFairOfferMinimumPercent,
-    int FavorableOfferMinimumPercent = PricingRule.DefaultFavorableOfferMinimumPercent);
+    int FavorableOfferMinimumPercent = PricingRule.DefaultFavorableOfferMinimumPercent,
+    Guid? PendingDriverOfferId = null,
+    int? PendingDriverOfferPriceCop = null,
+    DateTimeOffset? PendingDriverOfferExpiresAtUtc = null);
+
+/// <summary>
+/// Datos mínimos para que el pasajero compare ofertas sin revelar teléfonos,
+/// placa ni ubicación exacta del conductor antes de escogerlo.
+/// </summary>
+public sealed record CustomerDriverOfferDto(
+    Guid Id,
+    int OfferedPriceCop,
+    DateTimeOffset OfferedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    string DriverFirstName,
+    string DriverLastName,
+    string VehicleBrand,
+    string VehicleModel,
+    string VehicleColor,
+    VehicleType VehicleType,
+    decimal? PickupDistanceKilometers,
+    int? EstimatedPickupMinutes,
+    decimal? AverageRating,
+    int RatingCount);
+
+public sealed record CustomerDriverOfferBoardDto(
+    Guid RideRequestId,
+    DateTimeOffset OfferWindowEndsAtUtc,
+    int SearchRound,
+    bool IsWindowOpen,
+    IReadOnlyCollection<CustomerDriverOfferDto> Offers);
 
 public sealed record DriverActivitySummaryDto(
     int CompletedRideCount,
@@ -141,8 +173,12 @@ public interface IRideRequestService
     Task<ApplicationResult<RideRequestDto>> CancelAsync(Guid customerUserId, Guid rideRequestId, CancelRideRequestCommand command, CancellationToken cancellationToken = default);
     Task<ApplicationResult<RideRequestDto>> AcceptCounterOfferAsync(Guid customerUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
     Task<ApplicationResult<RideRequestDto>> RejectCounterOfferAsync(Guid customerUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
+    Task<CustomerDriverOfferBoardDto?> GetDriverOffersForCustomerAsync(Guid customerUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
+    Task<ApplicationResult<RideRequestDto>> SelectDriverOfferAsync(Guid customerUserId, Guid rideRequestId, Guid driverOfferId, CancellationToken cancellationToken = default);
+    Task<ApplicationResult<RideRequestDto>> RestartOfferCollectionAsync(Guid customerUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<DriverRideRequestDto>> ListAvailableForDriverAsync(Guid driverUserId, decimal? maximumPickupDistanceKilometers = null, CancellationToken cancellationToken = default);
     Task<DriverRideRequestDto?> GetCurrentForDriverAsync(Guid driverUserId, CancellationToken cancellationToken = default);
+    Task<DriverRideRequestDto?> GetPendingOfferForDriverAsync(Guid driverUserId, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<DriverRideRequestDto>> ListCompletedForDriverAsync(Guid driverUserId, CancellationToken cancellationToken = default);
     Task<DriverActivitySummaryDto> GetActivitySummaryAsync(Guid driverUserId, CancellationToken cancellationToken = default);
     Task<ApplicationResult<DriverRideRequestDto>> AcceptAsync(Guid driverUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
