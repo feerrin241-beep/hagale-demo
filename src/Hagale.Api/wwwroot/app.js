@@ -51,6 +51,7 @@ const state = {
   driverRideOffers: [],
   driverCurrentRideRequest: null,
   driverPendingRideOffer: null,
+  lastDriverJourneyVoiceKey: null,
   driverPendingOfferCountdownTimer: null,
   driverCompletedRideRequests: [],
   driverActivitySummary: null,
@@ -785,11 +786,25 @@ function fullAddressForVoice(address) {
   return voiceReady.length > 220 ? `${voiceReady.slice(0, 217)}...` : voiceReady;
 }
 
-function buildDriverRouteVoiceMessage(rideRequest) {
-  if (!rideRequest) return "No encontré las direcciones de este servicio.";
-  const pickup = fullAddressForVoice(rideRequest.pickupAddress);
-  const destination = fullAddressForVoice(rideRequest.destinationAddress);
-  return `Direcciones del servicio. Recogida A: ${pickup}. Destino B: ${destination}.`;
+function buildDriverPickupVoiceMessage(rideRequest) {
+  if (!rideRequest) return "No encontré la dirección de recogida.";
+  return `Servicio asignado. Dirígete al punto de recogida A: ${fullAddressForVoice(rideRequest.pickupAddress)}.`;
+}
+
+function buildDriverDestinationVoiceMessage(rideRequest) {
+  if (!rideRequest) return "No encontré la dirección de destino.";
+  return `Llegaste al punto de recogida A. Ahora lleva al pasajero al destino B: ${fullAddressForVoice(rideRequest.destinationAddress)}.`;
+}
+
+function announceDriverJourneyLeg(rideRequest, leg) {
+  if (!rideRequest) return;
+  const key = `${rideRequest.id}:${leg}`;
+  if (state.lastDriverJourneyVoiceKey === key) return;
+  state.lastDriverJourneyVoiceKey = key;
+  const message = leg === "destination"
+    ? buildDriverDestinationVoiceMessage(rideRequest)
+    : buildDriverPickupVoiceMessage(rideRequest);
+  announceRideNotification(message, { forceVoice: true, forceSound: true });
 }
 
 function repeatDriverRoute(rideRequestId) {
@@ -803,8 +818,12 @@ function repeatDriverRoute(rideRequestId) {
 
   state.driverAlertsUnlocked = true;
   if (navigator.vibrate) navigator.vibrate([80, 55, 80]);
-  speakDriverAlert(buildDriverRouteVoiceMessage(rideRequest), true);
-  showNotice("Repitiendo las direcciones completas.");
+  const destinationStage = ["DriverArrived", "InProgress"].includes(rideRequest.status);
+  const message = destinationStage
+    ? buildDriverDestinationVoiceMessage(rideRequest)
+    : buildDriverPickupVoiceMessage(rideRequest);
+  speakDriverAlert(message, true);
+  showNotice(destinationStage ? "Repitiendo la dirección del destino B." : "Repitiendo la dirección de recogida A.");
 }
 
 function buildDriverOfferVoiceMessage(offer) {
@@ -1109,10 +1128,11 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
     notifyDriverNewOffers(newOffers);
   }
   if (currentRequest && currentRequest.id !== previousCurrentRideId && previousPendingOfferId) {
-    announceRideNotification("El pasajero eligió tu oferta. Dirígete al punto de recogida.", {
-      forceVoice: true,
-      forceSound: true
-    });
+    announceDriverJourneyLeg(currentRequest, "pickup");
+  } else if (currentRequest?.status === "DriverArrived"
+    && currentRequest.id === previousCurrentRideId
+    && previousCurrentRideStatus !== "DriverArrived") {
+    announceDriverJourneyLeg(currentRequest, "destination");
   }
   // Los cambios de estado provocados por el propio conductor ya se confirman
   // con el botón y el aviso visual de la acción. No los repitas como una nueva
@@ -1307,13 +1327,16 @@ function getDriverMapPoints() {
 
   const currentRequest = state.driverCurrentRideRequest;
   if (currentRequest) {
-    const pickup = rideMapCoordinate(currentRequest, "pickup");
-    const destination = rideMapCoordinate(currentRequest, "destination");
-    if (pickup) {
-      points.push({ ...pickup, kind: "pickup", title: `${currentRequest.pickupAddress} · Recogida` });
-    }
-    if (destination) {
-      points.push({ ...destination, kind: "destination", title: `${currentRequest.destinationAddress} · Destino` });
+    const hasReachedPickup = ["DriverArrived", "InProgress"].includes(currentRequest.status);
+    const activePlace = hasReachedPickup ? "destination" : "pickup";
+    const activeAddress = hasReachedPickup ? currentRequest.destinationAddress : currentRequest.pickupAddress;
+    const point = rideMapCoordinate(currentRequest, activePlace);
+    if (point) {
+      points.push({
+        ...point,
+        kind: activePlace,
+        title: `${activeAddress} · ${hasReachedPickup ? "Destino B" : "Recogida A"}`
+      });
     }
     return points;
   }
@@ -4242,17 +4265,17 @@ function renderDriverRideRequestsPanel() {
             : currentRequest.status === "CounterOfferPending"
               ? `Propusiste ${formatCop(currentRequest.counterOfferPriceCop)}. Quedas reservado mientras el pasajero decide.`
               : "Este servicio ya finalizó.";
-    const navigationTarget = currentRequest.status === "InProgress" ? "destination" : "pickup";
+    const navigationTarget = ["DriverArrived", "InProgress"].includes(currentRequest.status) ? "destination" : "pickup";
+    const routeLegIsDestination = navigationTarget === "destination";
+    const activeRouteAddress = routeLegIsDestination ? currentRequest.destinationAddress : currentRequest.pickupAddress;
     const showNavigation = ["Accepted", "DriverEnRoute", "DriverArrived", "InProgress"].includes(currentRequest.status);
     return `
       <article id="driver-requests" class="driver-active-card driver-active-journey-card ${currentRequest.status === "Accepted" ? "is-accepted" : ""}" data-reveal>
         <div class="driver-active-heading"><div><span class="eyebrow">Servicio asignado</span><h2>${currentRequest.status === "Completed" ? "Servicio finalizado" : currentRequest.status === "Accepted" ? "¡Servicio aceptado!" : "Tu recorrido actual"}</h2><p>${journeyDescription}</p></div>${statusBadge(currentRequest.status)}</div>
         ${currentRequest.status === "Accepted" ? '<div class="driver-accepted-banner"><strong>✓ ACEPTADO</strong><span>El pasajero ya recibió tu confirmación.</span></div>' : ""}
         ${renderDriverJourneyStageAlert(currentRequest, journeyStage)}
-        <div class="driver-route-card">
-          <div class="route-stop route-stop-pickup"><span>RECOGIDA · A</span><strong>${escapeHtml(currentRequest.pickupAddress)}</strong></div>
-          <div class="route-connector" aria-hidden="true"></div>
-          <div class="route-stop route-stop-destination"><span>DESTINO · B</span><strong>${escapeHtml(currentRequest.destinationAddress)}</strong></div>
+        <div class="driver-route-card driver-active-route-card" aria-live="polite">
+          <div class="route-stop ${routeLegIsDestination ? "route-stop-destination" : "route-stop-pickup"}"><span>${routeLegIsDestination ? "DESTINO · B" : "RECOGIDA · A"}</span><strong>${escapeHtml(activeRouteAddress)}</strong></div>
         </div>
         <div class="driver-route-audio-actions"><button class="button driver-repeat-route" type="button" data-repeat-driver-route="${escapeHtml(currentRequest.id)}">🔊 Repetir dirección</button>${renderSafetyAssistButton("driver")}</div>
         ${journeyGuidance}
