@@ -159,25 +159,25 @@ public sealed class RideRequestService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
-        var rideRequest = await rideRequestRepository.GetByIdAsync(rideRequestId, cancellationToken);
-        if (rideRequest is null || rideRequest.CustomerUserId != customerUserId)
-        {
-            return ApplicationResult<RideRequestDto>.Failure("La solicitud no está disponible.");
-        }
-
-        var releasesCounterOfferDriver = rideRequest.Status == RideRequestStatus.CounterOfferPending;
-        var assignedDriver = rideRequest.AssignedDriverProfileId is not null
-            ? await driverRepository.GetByIdAsync(rideRequest.AssignedDriverProfileId.Value, cancellationToken)
-            : null;
-
         try
         {
+            await using var requestLock = await rideRequestRepository.LockForUpdateAsync(rideRequestId, cancellationToken);
+            var rideRequest = requestLock.Request;
+            if (rideRequest is null || rideRequest.CustomerUserId != customerUserId)
+            {
+                return ApplicationResult<RideRequestDto>.Failure("La solicitud no está disponible.");
+            }
+
+            var releasesCounterOfferDriver = rideRequest.Status == RideRequestStatus.CounterOfferPending;
+            var assignedDriver = rideRequest.AssignedDriverProfileId is not null
+                ? await driverRepository.GetByIdAsync(rideRequest.AssignedDriverProfileId.Value, cancellationToken)
+                : null;
             rideRequest.Cancel(command.Reason, timeProvider.GetUtcNow());
             if (assignedDriver?.Status == DriverStatus.Approved && releasesCounterOfferDriver)
             {
                 assignedDriver.SetAvailability(DriverAvailabilityStatus.Available);
             }
-            await rideRequestRepository.SaveChangesAsync(cancellationToken);
+            await requestLock.SaveChangesAsync(cancellationToken);
             await NotifyRideChangedAsync(rideRequest, assignedDriver, dispatchChanged: true, cancellationToken);
             return ApplicationResult<RideRequestDto>.Success(Map(rideRequest));
         }
@@ -276,9 +276,19 @@ public sealed class RideRequestService(
         {
             try
             {
-                request.RestartOfferCollection(now);
-                await rideRequestRepository.SaveChangesAsync(cancellationToken);
-                await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
+                await using var requestLock = await rideRequestRepository.LockForUpdateAsync(rideRequestId, cancellationToken);
+                request = requestLock.Request;
+                if (request is null || request.CustomerUserId != customerUserId || request.Status != RideRequestStatus.Pending)
+                {
+                    return null;
+                }
+
+                if (!request.IsOfferWindowOpenAt(timeProvider.GetUtcNow()))
+                {
+                    request.RestartOfferCollection(timeProvider.GetUtcNow());
+                    await requestLock.SaveChangesAsync(cancellationToken);
+                    await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
+                }
             }
             catch (ConcurrentUpdateException)
             {
@@ -336,29 +346,32 @@ public sealed class RideRequestService(
         Guid driverOfferId,
         CancellationToken cancellationToken = default)
     {
-        var request = await rideRequestRepository.GetByIdAsync(rideRequestId, cancellationToken);
-        if (request is null || request.CustomerUserId != customerUserId)
-        {
-            return ApplicationResult<RideRequestDto>.Failure("La solicitud no está disponible.");
-        }
-
-        var offer = request.DriverOffers.SingleOrDefault(item => item.Id == driverOfferId);
-        if (offer is null)
-        {
-            return ApplicationResult<RideRequestDto>.Failure("La oferta ya no está disponible. Actualiza las propuestas recibidas.");
-        }
-
-        var driver = await driverRepository.GetByIdAsync(offer.DriverProfileId, cancellationToken);
-        if (!CanReceiveRequests(driver) || !CanServe(driver!, request))
-        {
-            return ApplicationResult<RideRequestDto>.Failure("El conductor ya no está disponible. Elige otra propuesta.");
-        }
-
+        Guid? selectedDriverProfileId = null;
         try
         {
+            await using var requestLock = await rideRequestRepository.LockForUpdateAsync(rideRequestId, cancellationToken);
+            var request = requestLock.Request;
+            if (request is null || request.CustomerUserId != customerUserId)
+            {
+                return ApplicationResult<RideRequestDto>.Failure("La solicitud no está disponible.");
+            }
+
+            var offer = request.DriverOffers.SingleOrDefault(item => item.Id == driverOfferId);
+            if (offer is null)
+            {
+                return ApplicationResult<RideRequestDto>.Failure("La oferta ya no está disponible. Actualiza las propuestas recibidas.");
+            }
+
+            var driver = await driverRepository.GetByIdAsync(offer.DriverProfileId, cancellationToken);
+            if (!CanReceiveRequests(driver) || !CanServe(driver!, request))
+            {
+                return ApplicationResult<RideRequestDto>.Failure("El conductor ya no está disponible. Elige otra propuesta.");
+            }
+
+            selectedDriverProfileId = driver!.Id;
             request.SelectDriverOffer(driverOfferId, timeProvider.GetUtcNow());
             driver!.SetAvailability(DriverAvailabilityStatus.Busy);
-            await rideRequestRepository.SaveChangesAsync(cancellationToken);
+            await requestLock.SaveChangesAsync(cancellationToken);
             await NotifyRideChangedAsync(request, driver, dispatchChanged: true, cancellationToken);
             return ApplicationResult<RideRequestDto>.Success(Map(request));
         }
@@ -368,7 +381,7 @@ public sealed class RideRequestService(
                 customerUserId,
                 rideRequestId,
                 driverOfferId,
-                driver!.Id,
+                selectedDriverProfileId!.Value,
                 cancellationToken);
         }
         catch (DomainRuleViolationException exception)
@@ -444,16 +457,17 @@ public sealed class RideRequestService(
         Guid rideRequestId,
         CancellationToken cancellationToken = default)
     {
-        var request = await rideRequestRepository.GetByIdAsync(rideRequestId, cancellationToken);
-        if (request is null || request.CustomerUserId != customerUserId)
-        {
-            return ApplicationResult<RideRequestDto>.Failure("La solicitud no está disponible.");
-        }
-
         try
         {
+            await using var requestLock = await rideRequestRepository.LockForUpdateAsync(rideRequestId, cancellationToken);
+            var request = requestLock.Request;
+            if (request is null || request.CustomerUserId != customerUserId)
+            {
+                return ApplicationResult<RideRequestDto>.Failure("La solicitud no está disponible.");
+            }
+
             request.RestartOfferCollection(timeProvider.GetUtcNow());
-            await rideRequestRepository.SaveChangesAsync(cancellationToken);
+            await requestLock.SaveChangesAsync(cancellationToken);
             await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
             return ApplicationResult<RideRequestDto>.Success(Map(request));
         }
@@ -666,28 +680,61 @@ public sealed class RideRequestService(
             return ApplicationResult<DriverRideRequestDto>.Failure("Ya tienes un servicio activo.");
         }
 
-        var now = timeProvider.GetUtcNow();
+        var precheckAt = timeProvider.GetUtcNow();
         var pendingRequests = await rideRequestRepository.ListPendingAsync(cancellationToken);
-        if (pendingRequests.Any(request => request.HasPendingOfferFromDriver(driver.Id, now)))
+        if (pendingRequests.Any(request =>
+                request.Id != rideRequestId && request.HasPendingOfferFromDriver(driver.Id, precheckAt)))
         {
             return ApplicationResult<DriverRideRequestDto>.Failure("Ya enviaste una oferta y estás esperando la elección del pasajero.");
         }
 
-        var request = await rideRequestRepository.GetByIdAsync(rideRequestId, cancellationToken);
-        if (request is null || !CanServe(driver, request))
-        {
-            return ApplicationResult<DriverRideRequestDto>.Failure("La solicitud no está disponible para tu vehículo y ciudad de operación.");
-        }
-
         try
         {
+            await using var requestLock = await rideRequestRepository.LockForUpdateAsync(rideRequestId, cancellationToken);
+            var request = requestLock.Request;
+            if (request is null || !CanServe(driver, request))
+            {
+                return ApplicationResult<DriverRideRequestDto>.Failure("La solicitud no está disponible para tu vehículo y ciudad de operación.");
+            }
+
+            var now = timeProvider.GetUtcNow();
+            var price = offeredPriceCop ?? request.ProposedPriceCop;
+            var existingOffer = request.DriverOffers.FirstOrDefault(offer =>
+                offer.DriverProfileId == driver!.Id && offer.IsPendingAt(now));
+            if (existingOffer is not null)
+            {
+                if (existingOffer.OfferedPriceCop == price)
+                {
+                    var existingPricingRule = await pricingRuleRepository.GetByCityAndServiceAsync(
+                        request.OperatingCityCode,
+                        request.ServiceType,
+                        cancellationToken);
+                    return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
+                        request,
+                        CalculatePickupDistance(driver, request),
+                        CalculateDirectDistanceReferenceFare(existingPricingRule, request),
+                        existingPricingRule,
+                        existingOffer));
+                }
+
+                return ApplicationResult<DriverRideRequestDto>.Failure(
+                    "Ya enviaste una oferta para esta solicitud. Espera la decisión del pasajero.");
+            }
+
+            var pendingRequestsAfterLock = await rideRequestRepository.ListPendingAsync(cancellationToken);
+            if (pendingRequestsAfterLock.Any(pending =>
+                    pending.Id != rideRequestId && pending.HasPendingOfferFromDriver(driver!.Id, now)))
+            {
+                return ApplicationResult<DriverRideRequestDto>.Failure(
+                    "Ya tienes otra oferta pendiente. Espera la decisión del pasajero antes de enviar una nueva.");
+            }
+
             var pricingRule = await pricingRuleRepository.GetByCityAndServiceAsync(
                 request.OperatingCityCode,
                 request.ServiceType,
                 cancellationToken);
             var fairFare = CalculateDirectDistanceReferenceFare(pricingRule, request);
             var maximumDriverPriceCop = CalculateMaximumDriverOfferFare(fairFare, request);
-            var price = offeredPriceCop ?? request.ProposedPriceCop;
             if (offeredPriceCop.HasValue && price > maximumDriverPriceCop)
             {
                 return ApplicationResult<DriverRideRequestDto>.Failure(
@@ -699,7 +746,7 @@ public sealed class RideRequestService(
                 price,
                 now,
                 offeredPriceCop.HasValue ? maximumDriverPriceCop : null);
-            await rideRequestRepository.SaveChangesAsync(cancellationToken);
+            await requestLock.SaveChangesAsync(cancellationToken);
             await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
             return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
                 request,
@@ -727,72 +774,77 @@ public sealed class RideRequestService(
         const int maximumAttempts = 4;
         for (var attempt = 1; attempt <= maximumAttempts; attempt++)
         {
-            var request = await rideRequestRepository.ReloadByIdAsync(rideRequestId, cancellationToken);
-            if (request is null || !CanServe(driver, request))
-            {
-                return ApplicationResult<DriverRideRequestDto>.Failure("La solicitud ya no está disponible para tu vehículo o ciudad; no se registró tu oferta.");
-            }
-
-            var now = timeProvider.GetUtcNow();
-            var pricingRule = await pricingRuleRepository.GetByCityAndServiceAsync(
-                request.OperatingCityCode,
-                request.ServiceType,
-                cancellationToken);
-            var existingOffer = request.DriverOffers.FirstOrDefault(offer =>
-                offer.DriverProfileId == driver.Id &&
-                offer.IsPendingAt(now));
-            if (existingOffer is not null)
-            {
-                // A retry after a response loss is successful only when the
-                // original price is the one still pending for this driver.
-                return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
-                    request,
-                    CalculatePickupDistance(driver, request),
-                    CalculateDirectDistanceReferenceFare(pricingRule, request),
-                    pricingRule,
-                    existingOffer));
-            }
-
-            if (request.Status != RideRequestStatus.Pending)
-            {
-                return ApplicationResult<DriverRideRequestDto>.Failure("La solicitud ya fue asignada o cerrada; no se registró tu oferta.");
-            }
-
-            if (!request.IsOfferWindowOpenAt(now))
-            {
-                return ApplicationResult<DriverRideRequestDto>.Failure("Terminó el tiempo de esta ronda; no se registró tu oferta. Actualiza la bandeja para ver la siguiente ronda.");
-            }
-
-            if (await rideRequestRepository.GetActiveByDriverProfileIdAsync(driver.Id, cancellationToken) is not null)
-            {
-                return ApplicationResult<DriverRideRequestDto>.Failure("Ya tienes un servicio activo.");
-            }
-
-            var pendingRequests = await rideRequestRepository.ListPendingAsync(cancellationToken);
-            if (pendingRequests.Any(pending =>
-                    pending.Id != rideRequestId && pending.HasPendingOfferFromDriver(driver.Id, now)))
-            {
-                return ApplicationResult<DriverRideRequestDto>.Failure(
-                    "Ya tienes otra oferta pendiente. Espera la decisión del pasajero antes de enviar una nueva.");
-            }
-
-            var fairFare = CalculateDirectDistanceReferenceFare(pricingRule, request);
-            var maximumDriverPriceCop = CalculateMaximumDriverOfferFare(fairFare, request);
-            var price = offeredPriceCop ?? request.ProposedPriceCop;
-            if (offeredPriceCop.HasValue && price > maximumDriverPriceCop)
-            {
-                return ApplicationResult<DriverRideRequestDto>.Failure(
-                    $"Tu oferta no puede superar {maximumDriverPriceCop:N0} COP (máximo 100 % por encima de la tarifa justa).");
-            }
-
             try
             {
+                await using var requestLock = await rideRequestRepository.LockForUpdateAsync(rideRequestId, cancellationToken);
+                var request = requestLock.Request;
+                if (request is null || !CanServe(driver, request))
+                {
+                    return ApplicationResult<DriverRideRequestDto>.Failure("La solicitud ya no está disponible para tu vehículo o ciudad; no se registró tu oferta.");
+                }
+
+                var now = timeProvider.GetUtcNow();
+                var pricingRule = await pricingRuleRepository.GetByCityAndServiceAsync(
+                    request.OperatingCityCode,
+                    request.ServiceType,
+                    cancellationToken);
+                var existingOffer = request.DriverOffers.FirstOrDefault(offer =>
+                    offer.DriverProfileId == driver.Id && offer.IsPendingAt(now));
+                if (existingOffer is not null)
+                {
+                    var priceAlreadySent = offeredPriceCop ?? request.ProposedPriceCop;
+                    if (existingOffer.OfferedPriceCop == priceAlreadySent)
+                    {
+                        return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
+                            request,
+                            CalculatePickupDistance(driver, request),
+                            CalculateDirectDistanceReferenceFare(pricingRule, request),
+                            pricingRule,
+                            existingOffer));
+                    }
+
+                    return ApplicationResult<DriverRideRequestDto>.Failure(
+                        "Ya enviaste una oferta para esta solicitud. Espera la decisión del pasajero.");
+                }
+
+                if (request.Status != RideRequestStatus.Pending)
+                {
+                    return ApplicationResult<DriverRideRequestDto>.Failure("La solicitud ya fue asignada o cerrada; no se registró tu oferta.");
+                }
+
+                if (!request.IsOfferWindowOpenAt(now))
+                {
+                    return ApplicationResult<DriverRideRequestDto>.Failure("Terminó el tiempo de esta ronda; no se registró tu oferta. Actualiza la bandeja para ver la siguiente ronda.");
+                }
+
+                if (await rideRequestRepository.GetActiveByDriverProfileIdAsync(driver.Id, cancellationToken) is not null)
+                {
+                    return ApplicationResult<DriverRideRequestDto>.Failure("Ya tienes un servicio activo.");
+                }
+
+                var pendingRequests = await rideRequestRepository.ListPendingAsync(cancellationToken);
+                if (pendingRequests.Any(pending =>
+                        pending.Id != rideRequestId && pending.HasPendingOfferFromDriver(driver.Id, now)))
+                {
+                    return ApplicationResult<DriverRideRequestDto>.Failure(
+                        "Ya tienes otra oferta pendiente. Espera la decisión del pasajero antes de enviar una nueva.");
+                }
+
+                var fairFare = CalculateDirectDistanceReferenceFare(pricingRule, request);
+                var maximumDriverPriceCop = CalculateMaximumDriverOfferFare(fairFare, request);
+                var price = offeredPriceCop ?? request.ProposedPriceCop;
+                if (offeredPriceCop.HasValue && price > maximumDriverPriceCop)
+                {
+                    return ApplicationResult<DriverRideRequestDto>.Failure(
+                        $"Tu oferta no puede superar {maximumDriverPriceCop:N0} COP (máximo 100 % por encima de la tarifa justa).");
+                }
+
                 var offer = request.AddDriverOffer(
                     driver.Id,
                     price,
                     now,
                     offeredPriceCop.HasValue ? maximumDriverPriceCop : null);
-                await rideRequestRepository.SaveChangesAsync(cancellationToken);
+                await requestLock.SaveChangesAsync(cancellationToken);
                 await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
                 return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
                     request,
@@ -803,10 +855,10 @@ public sealed class RideRequestService(
             }
             catch (ConcurrentUpdateException) when (attempt < maximumAttempts)
             {
-                // Varios conductores pueden enviar propuesta al mismo tiempo.
-                // Recarga la solicitud y conserva el precio que eligió este
-                // conductor; una colisión transitoria no debe descartar la oferta.
-                await Task.Delay(TimeSpan.FromMilliseconds(75 * attempt), cancellationToken);
+                // El bloqueo por solicitud serializa las ofertas; este pequeño
+                // backoff queda como protección ante una acción externa concurrente.
+                var jitterMilliseconds = Random.Shared.Next(40, 140);
+                await Task.Delay(TimeSpan.FromMilliseconds(80 * attempt + jitterMilliseconds), cancellationToken);
             }
             catch (ConcurrentUpdateException)
             {

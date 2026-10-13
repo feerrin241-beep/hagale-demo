@@ -747,7 +747,9 @@ function normalizeVoiceCommand(value) {
 }
 
 function isDriverAcceptanceCommand(value) {
-  return /\bacepto\s+(el|este)\s+servicio\b/.test(normalizeVoiceCommand(value));
+  const command = normalizeVoiceCommand(value);
+  return /\bacepto(?:\s+(?:el|este))?\s+servicio\b/.test(command)
+    || /\b(?:enviar|envia|envio|mando|mandar)\s+(?:la\s+)?oferta\b/.test(command);
 }
 
 function startDriverVoiceAcceptance(offer) {
@@ -769,7 +771,7 @@ function startDriverVoiceAcceptance(offer) {
     if (accepted) {
       void acceptRideRequest(offer.id, "voice");
     } else {
-      showNotice("No se reconoció la orden. Di: ACEPTO EL SERVICIO.", true);
+      showNotice("No se reconoció la orden. Di: ENVIAR OFERTA o ACEPTO EL SERVICIO.", true);
     }
   };
   recognition.onerror = event => {
@@ -789,7 +791,7 @@ function startDriverVoiceAcceptance(offer) {
       stopDriverVoiceAcceptance();
       showNotice("La ventana de voz terminó. El servicio sigue disponible para otros conductores.");
     }, 8_000);
-    showNotice("Di: ACEPTO EL SERVICIO. Escuchando durante 8 segundos.", false, true);
+    showNotice("Di: ENVIAR OFERTA o ACEPTO EL SERVICIO. Escuchando durante 8 segundos.", false, true);
   } catch {
     stopDriverVoiceAcceptance();
   }
@@ -884,7 +886,7 @@ function buildDriverOfferVoiceMessage(offer) {
     .replaceAll("{destino}", destinationLine)
     .replaceAll("{valor}", formatCopForVoice(offer.proposedPriceCop))
     .replaceAll("{distancia}", distanceLine)
-    .replaceAll("{tiempo}", timeLine) + " " + classification.label + ". Diga: ACEPTO EL SERVICIO.";
+    .replaceAll("{tiempo}", timeLine) + " " + classification.label + ". Diga: ENVIAR OFERTA. La carrera se asigna cuando el pasajero te elige.";
 }
 
 function notifyDriverNewOffers(newOffers) {
@@ -6317,14 +6319,26 @@ function applyPendingDriverOffer(offer, message) {
   showNotice(message);
 }
 
-async function recoverDriverOfferConflict(rideRequestId, error, retryRequest = null, successMessage = "Oferta enviada. Espera a que el pasajero elija conductor.") {
+function pendingOfferRecoveryNotice(offer, expectedPriceCop = null, successMessage = "Tu oferta ya está registrada. Espera a que el pasajero la revise.") {
+  const registeredPriceCop = Number(offer?.pendingDriverOfferPriceCop ?? offer?.proposedPriceCop ?? 0);
+  if (expectedPriceCop === null || registeredPriceCop === Number(expectedPriceCop)) return successMessage;
+  return `Ya había una oferta de ${formatCop(registeredPriceCop)} pendiente; la nueva de ${formatCop(expectedPriceCop)} no la reemplazó.`;
+}
+
+async function recoverDriverOfferConflict(
+  rideRequestId,
+  error,
+  retryRequest = null,
+  successMessage = "Oferta enviada. Espera a que el pasajero elija conductor.",
+  expectedPriceCop = null
+) {
   const looksLikeConflict = error?.statusCode === 409 || /solicitud.*(?:actualiz|cambi|ya no|no est[aá] disponible|termin)|(?:actualiz|cambi).*(?:solicitud|oferta)/i.test(error?.message || "");
   if (!looksLikeConflict) return false;
 
   try {
     const pendingOffer = await request("/driver/ride-requests/pending-offer");
     if (pendingOffer?.id === rideRequestId) {
-      applyPendingDriverOffer(pendingOffer, "Tu oferta ya está registrada. Espera a que el pasajero la revise.");
+      applyPendingDriverOffer(pendingOffer, pendingOfferRecoveryNotice(pendingOffer, expectedPriceCop));
       return true;
     }
 
@@ -6347,7 +6361,7 @@ async function recoverDriverOfferConflict(rideRequestId, error, retryRequest = n
       } catch {
         const recoveredOffer = await request("/driver/ride-requests/pending-offer");
         if (recoveredOffer?.id === rideRequestId) {
-          applyPendingDriverOffer(recoveredOffer, "Tu oferta ya está registrada. Espera a que el pasajero la revise.");
+          applyPendingDriverOffer(recoveredOffer, pendingOfferRecoveryNotice(recoveredOffer, expectedPriceCop));
           return true;
         }
         await refreshDriverDispatch();
@@ -6365,11 +6379,15 @@ async function recoverDriverOfferConflict(rideRequestId, error, retryRequest = n
   }
 }
 
-async function recoverTimedOutDriverOffer(rideRequestId) {
+async function recoverTimedOutDriverOffer(rideRequestId, expectedPriceCop = null) {
   try {
     const pendingOffer = await request("/driver/ride-requests/pending-offer", { timeoutMs: 8000 });
     if (pendingOffer?.id === rideRequestId) {
-      applyPendingDriverOffer(pendingOffer, "Tu oferta sí quedó registrada. Espera a que el pasajero la revise.");
+      applyPendingDriverOffer(pendingOffer, pendingOfferRecoveryNotice(
+        pendingOffer,
+        expectedPriceCop,
+        "Tu oferta sí quedó registrada. Espera a que el pasajero la revise."
+      ));
       return;
     }
   } catch { /* Se informa el resultado incierto más abajo. */ }
@@ -6460,8 +6478,8 @@ async function sendCounterOffer(rideRequestId, priceCop) {
   } catch (error) {
     const successMessage = `Contraoferta de ${formatCop(normalizedPrice)} enviada. Espera la decisión del pasajero.`;
     if (error?.code === "REQUEST_TIMEOUT") {
-      await recoverTimedOutDriverOffer(rideRequestId);
-    } else if (!await recoverDriverOfferConflict(rideRequestId, error, submit, successMessage)) {
+      await recoverTimedOutDriverOffer(rideRequestId, normalizedPrice);
+    } else if (!await recoverDriverOfferConflict(rideRequestId, error, submit, successMessage, normalizedPrice)) {
       showNotice(error.message, true);
     }
   } finally {

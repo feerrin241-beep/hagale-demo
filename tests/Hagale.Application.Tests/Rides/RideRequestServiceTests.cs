@@ -4,6 +4,7 @@ using Hagale.Application.Rides;
 using Hagale.Domain.Pricing;
 using Hagale.Domain.Drivers;
 using Hagale.Domain.Rides;
+using System.Collections.Concurrent;
 
 namespace Hagale.Application.Tests.Rides;
 
@@ -333,6 +334,82 @@ public sealed class RideRequestServiceTests
         Assert.Equal(6_200, submitted.Value!.PendingDriverOfferPriceCop);
         var customerOffer = Assert.Single(customerBoard!.Offers);
         Assert.Equal(6_200, customerOffer.OfferedPriceCop);
+    }
+
+    [Fact]
+    public async Task Simultaneous_driver_offers_are_serialized_and_both_reach_customer_board()
+    {
+        var customerUserId = Guid.NewGuid();
+        var firstDriverUserId = Guid.NewGuid();
+        var secondDriverUserId = Guid.NewGuid();
+        var request = new RideRequest(
+            customerUserId,
+            "Calle 72 # 10-07, Bucaramanga",
+            "Aeropuerto Palonegro, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            5_700,
+            3_500,
+            DateTimeOffset.UtcNow);
+        var rides = new InMemoryRideRequestRepository();
+        rides.Add(request);
+        var drivers = new InMemoryDriverRepository();
+        drivers.Add(CreateAvailableDriver(firstDriverUserId, "BUC", VehicleType.Motorcycle));
+        drivers.Add(CreateAvailableDriver(secondDriverUserId, "BUC", VehicleType.Motorcycle));
+        var service = new RideRequestService(
+            rides,
+            new InMemoryPricingRuleRepository(),
+            drivers,
+            new ExistingUserDirectory(customerUserId, firstDriverUserId, secondDriverUserId),
+            TimeProvider.System);
+
+        var results = await Task.WhenAll(
+            service.MakeCounterOfferAsync(firstDriverUserId, request.Id, new CreateCounterOfferCommand(6_200)),
+            service.MakeCounterOfferAsync(secondDriverUserId, request.Id, new CreateCounterOfferCommand(6_700)));
+        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
+
+        Assert.All(results, result => Assert.True(result.IsSuccess, result.Error));
+        Assert.Equal([6_200, 6_700], board!.Offers.Select(offer => offer.OfferedPriceCop).Order().ToArray());
+    }
+
+    [Fact]
+    public async Task Duplicate_simultaneous_offer_from_same_driver_is_idempotent()
+    {
+        var customerUserId = Guid.NewGuid();
+        var driverUserId = Guid.NewGuid();
+        var request = new RideRequest(
+            customerUserId,
+            "Calle 72 # 10-07, Bucaramanga",
+            "Aeropuerto Palonegro, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            5_700,
+            3_500,
+            DateTimeOffset.UtcNow);
+        var rides = new InMemoryRideRequestRepository();
+        rides.Add(request);
+        var drivers = new InMemoryDriverRepository();
+        drivers.Add(CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle));
+        var service = new RideRequestService(
+            rides,
+            new InMemoryPricingRuleRepository(),
+            drivers,
+            new ExistingUserDirectory(customerUserId, driverUserId),
+            TimeProvider.System);
+
+        var results = await Task.WhenAll(
+            service.MakeCounterOfferAsync(driverUserId, request.Id, new CreateCounterOfferCommand(6_200)),
+            service.MakeCounterOfferAsync(driverUserId, request.Id, new CreateCounterOfferCommand(6_200)));
+        var repeatedRequest = await service.MakeCounterOfferAsync(
+            driverUserId,
+            request.Id,
+            new CreateCounterOfferCommand(6_200));
+        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
+
+        Assert.All(results, result => Assert.True(result.IsSuccess, result.Error));
+        Assert.True(repeatedRequest.IsSuccess, repeatedRequest.Error);
+        var offer = Assert.Single(board!.Offers);
+        Assert.Equal(6_200, offer.OfferedPriceCop);
     }
 
     [Fact]
@@ -999,6 +1076,7 @@ public sealed class RideRequestServiceTests
     private sealed class InMemoryRideRequestRepository : IRideRequestRepository
     {
         private readonly List<RideRequest> _requests = [];
+        private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _writeLocks = new();
 
         public Action<RideRequest>? BeforeNextSaveFailure { get; set; }
 
@@ -1010,6 +1088,18 @@ public sealed class RideRequestServiceTests
         public Task<RideRequest?> ReloadByIdAsync(Guid rideRequestId, CancellationToken cancellationToken = default) =>
             GetByIdAsync(rideRequestId, cancellationToken);
 
+        public async Task<IRideRequestWriteLock> LockForUpdateAsync(
+            Guid rideRequestId,
+            CancellationToken cancellationToken = default)
+        {
+            var gate = _writeLocks.GetOrAdd(rideRequestId, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync(cancellationToken);
+            return new InMemoryRideRequestWriteLock(
+                this,
+                gate,
+                _requests.SingleOrDefault(request => request.Id == rideRequestId));
+        }
+
         public Task<IReadOnlyCollection<RideRequest>> ListByCustomerUserIdAsync(
             Guid customerUserId,
             CancellationToken cancellationToken = default) =>
@@ -1018,9 +1108,12 @@ public sealed class RideRequestServiceTests
                     .OrderByDescending(request => request.RequestedAtUtc)
                     .ToArray());
 
-        public Task<IReadOnlyCollection<RideRequest>> ListPendingAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyCollection<RideRequest>>(
-                _requests.Where(request => request.Status == RideRequestStatus.Pending).ToArray());
+        public async Task<IReadOnlyCollection<RideRequest>> ListPendingAsync(CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            return _requests.Where(request => request.Status == RideRequestStatus.Pending).ToArray();
+        }
 
         public Task<IReadOnlyCollection<RideRequest>> ListCompletedByDriverProfileIdAsync(
             Guid driverProfileId,
@@ -1047,6 +1140,42 @@ public sealed class RideRequestServiceTests
             }
 
             return Task.CompletedTask;
+        }
+
+        private sealed class InMemoryRideRequestWriteLock(
+            InMemoryRideRequestRepository repository,
+            SemaphoreSlim gate,
+            RideRequest? request) : IRideRequestWriteLock
+        {
+            private int released;
+
+            public RideRequest? Request { get; } = request;
+
+            public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+            {
+                try
+                {
+                    await repository.SaveChangesAsync(cancellationToken);
+                }
+                finally
+                {
+                    Release();
+                }
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Release();
+                return ValueTask.CompletedTask;
+            }
+
+            private void Release()
+            {
+                if (Interlocked.Exchange(ref released, 1) == 0)
+                {
+                    gate.Release();
+                }
+            }
         }
     }
 
