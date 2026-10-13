@@ -272,8 +272,32 @@ public sealed class RideRequestService(
         }
 
         var now = timeProvider.GetUtcNow();
+        if (!request.IsOfferWindowOpenAt(now))
+        {
+            try
+            {
+                request.RestartOfferCollection(now);
+                await rideRequestRepository.SaveChangesAsync(cancellationToken);
+                await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
+            }
+            catch (ConcurrentUpdateException)
+            {
+                // Otra consulta ya abrió la siguiente ronda; vuelve a leerla.
+                request = await rideRequestRepository.GetByIdAsync(rideRequestId, cancellationToken);
+                if (request is null || request.CustomerUserId != customerUserId || request.Status != RideRequestStatus.Pending)
+                {
+                    return null;
+                }
+            }
+            catch (DomainRuleViolationException)
+            {
+                return null;
+            }
+        }
+
+        var boardNow = timeProvider.GetUtcNow();
         var availableOffers = request.DriverOffers
-            .Where(offer => offer.SearchRound == request.OfferSearchRound && offer.IsPendingAt(now))
+            .Where(offer => offer.SearchRound == request.OfferSearchRound && offer.IsPendingAt(boardNow))
             .OrderBy(offer => offer.OfferedPriceCop)
             .ThenBy(offer => offer.OfferedAtUtc)
             .ToArray();
@@ -302,7 +326,7 @@ public sealed class RideRequestService(
             request.Id,
             request.GetOfferWindowEndUtc(),
             request.OfferSearchRound,
-            request.IsOfferWindowOpenAt(now),
+            request.IsOfferWindowOpenAt(boardNow),
             customerOffers);
     }
 
@@ -590,12 +614,24 @@ public sealed class RideRequestService(
 
         try
         {
-            var price = offeredPriceCop ?? request.ProposedPriceCop;
-            var offer = request.AddDriverOffer(driver.Id, price, now);
             var pricingRule = await pricingRuleRepository.GetByCityAndServiceAsync(
                 request.OperatingCityCode,
                 request.ServiceType,
                 cancellationToken);
+            var fairFare = CalculateDirectDistanceReferenceFare(pricingRule, request);
+            var maximumDriverPriceCop = CalculateMaximumDriverOfferFare(fairFare, request);
+            var price = offeredPriceCop ?? request.ProposedPriceCop;
+            if (offeredPriceCop.HasValue && price > maximumDriverPriceCop)
+            {
+                return ApplicationResult<DriverRideRequestDto>.Failure(
+                    $"Tu oferta no puede superar {maximumDriverPriceCop:N0} COP (máximo 100 % por encima de la tarifa justa)." );
+            }
+
+            var offer = request.AddDriverOffer(
+                driver.Id,
+                price,
+                now,
+                offeredPriceCop.HasValue ? maximumDriverPriceCop : null);
             await rideRequestRepository.SaveChangesAsync(cancellationToken);
             await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
             return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
@@ -935,6 +971,13 @@ public sealed class RideRequestService(
         return pricingRule is null || !pricingRule.IsActive || !tripDistance.HasValue
             ? null
             : pricingRule.CalculateRecommendedFareCop(tripDistance.Value, estimatedDurationMinutes: 0);
+    }
+
+    private static int CalculateMaximumDriverOfferFare(int? directDistanceFareCop, RideRequest request)
+    {
+        var fairFareCop = directDistanceFareCop
+            ?? Math.Max(request.ProposedPriceCop, request.MinimumFareCopAtRequest);
+        return (int)Math.Min(int.MaxValue, (long)fairFareCop * 2);
     }
 
     private static bool CanReceiveRequests(DriverProfile? driver) =>

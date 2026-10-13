@@ -1117,6 +1117,19 @@ window.addEventListener("appinstalled", () => {
 
 registerHagaleServiceWorker();
 
+function syncVisualViewportInsets() {
+  const viewport = window.visualViewport;
+  const layoutHeight = window.innerHeight || document.documentElement.clientHeight;
+  const visibleBottom = viewport ? viewport.offsetTop + viewport.height : layoutHeight;
+  const browserBottomGap = Math.max(0, Math.ceil(layoutHeight - visibleBottom));
+  document.documentElement.style.setProperty("--visual-viewport-bottom-gap", `${browserBottomGap}px`);
+}
+
+window.addEventListener("resize", syncVisualViewportInsets, { passive: true });
+window.visualViewport?.addEventListener("resize", syncVisualViewportInsets, { passive: true });
+window.visualViewport?.addEventListener("scroll", syncVisualViewportInsets, { passive: true });
+syncVisualViewportInsets();
+
 function getDispatchOffersUrl() {
   return `/driver/ride-requests/available?maximumPickupDistanceKilometers=${encodeURIComponent(state.dispatchRadiusKilometers)}`;
 }
@@ -2511,10 +2524,14 @@ function testCustomerVoiceAlerts() {
 function syncCustomerTrackingPolling(isCustomerMode) {
   window.clearInterval(state.customerTrackingPollingTimer);
   state.customerTrackingPollingTimer = null;
-  if (!isCustomerMode || !getOpenCustomerRideRequest()) return;
+  const openRide = getOpenCustomerRideRequest();
+  // Keep the customer's pending search alive while they temporarily look at
+  // another panel (including Driver mode), but only announce updates while the
+  // customer panel is actually visible.
+  if (!openRide || (!isCustomerMode && openRide.status !== "Pending")) return;
 
   state.customerTrackingPollingTimer = window.setInterval(() => {
-    void refreshCustomerRideStatus({ notifyJourneyChange: true }).catch(() => {
+    void refreshCustomerRideStatus({ notifyJourneyChange: isCustomerMode }).catch(() => {
       // A future update can retry; the current map remains visible.
     });
   }, 15_000);
@@ -2665,23 +2682,41 @@ async function calculateRideFromTypedAddresses() {
   const destinationAddress = String(data.destinationAddress || "").trim();
   const pickupNeighborhood = String(data.pickupNeighborhood || "").trim();
   const destinationNeighborhood = String(data.destinationNeighborhood || "").trim();
-  if (pickupAddress.length < 5 || destinationAddress.length < 5) {
-    showNotice("Escribe una dirección completa para A y otra para B.", true);
+  const existingPickup = toMapCoordinate(
+    state.pendingPickupLocation?.pickupLatitude,
+    state.pendingPickupLocation?.pickupLongitude
+  );
+  const existingDestination = toMapCoordinate(
+    state.pendingDestinationLocation?.destinationLatitude,
+    state.pendingDestinationLocation?.destinationLongitude
+  );
+  if ((!existingPickup && pickupAddress.length < 5) || (!existingDestination && destinationAddress.length < 5)) {
+    showNotice("Escribe la dirección del punto que falta o selecciónalo con GPS/mapa.", true);
     return;
   }
 
   const cityCode = String(state.customerRideDraft?.pricingRuleKey || "").split("|")[0]
     || state.pricingRules?.find(rule => rule.isActive)?.cityCode
     || "BUC";
+  const needsGeocoding = !existingPickup || !existingDestination;
   if (button) {
     button.disabled = true;
-    button.textContent = "Ubicando direcciones…";
+    button.textContent = needsGeocoding ? "Ubicando punto(s) pendiente(s)…" : "Calculando tarifa…";
   }
   try {
-    saveCustomerRideDraft({ pickupAddress, pickupNeighborhood, destinationAddress, destinationNeighborhood });
+    setRideAddressFallback("pickup", "map");
+    setRideAddressFallback("destination", "map");
+    const currentForm = app.querySelector("#ride-location-step-form");
+    const currentData = currentForm ? Object.fromEntries(new FormData(currentForm)) : {};
+    saveCustomerRideDraft({
+      pickupAddress: currentData.pickupAddress || pickupAddress,
+      pickupNeighborhood,
+      destinationAddress: currentData.destinationAddress || destinationAddress,
+      destinationNeighborhood
+    });
     const [pickup, destination] = await Promise.all([
-      searchRideAddressCoordinates(pickupAddress, pickupNeighborhood, cityCode),
-      searchRideAddressCoordinates(destinationAddress, destinationNeighborhood, cityCode)
+      existingPickup || searchRideAddressCoordinates(pickupAddress, pickupNeighborhood, cityCode),
+      existingDestination || searchRideAddressCoordinates(destinationAddress, destinationNeighborhood, cityCode)
     ]);
     state.pendingPickupLocation = { pickupLatitude: pickup.latitude, pickupLongitude: pickup.longitude };
     state.pendingDestinationLocation = { destinationLatitude: destination.latitude, destinationLongitude: destination.longitude };
@@ -2689,17 +2724,29 @@ async function calculateRideFromTypedAddresses() {
     sessionStorage.setItem(customerRideStepKey, state.customerRideStep);
     renderDashboard();
     void refreshCustomerRideQuote();
-    showNotice("A y B ubicados. Calculando la tarifa sugerida…");
+    showNotice(needsGeocoding
+      ? "Puntos A y B listos. Calculando la tarifa sugerida…"
+      : "Usamos directamente los puntos GPS/mapa. Calculando la tarifa sugerida…");
   } catch (error) {
     showNotice(error.message || "No pudimos ubicar las dos direcciones. Puedes usar el mapa.", true);
   } finally {
     const currentButton = app.querySelector("[data-geocode-ride]");
     if (currentButton) {
       currentButton.disabled = false;
-      currentButton.textContent = "Calcular tarifa con direcciones";
+      currentButton.textContent = "Calcular tarifa";
     }
   }
 }
+
+function setRideAddressFallback(target, source) {
+  const isDestination = target === "destination";
+  const input = app.querySelector(isDestination ? "#ride-destination" : "#ride-pickup");
+  if (!input || String(input.value || "").trim().length >= 5) return;
+  input.value = source === "gps"
+    ? (isDestination ? "Destino marcado con GPS" : "Recogida marcada con GPS")
+    : (isDestination ? "Destino marcado en el mapa" : "Recogida marcada en el mapa");
+}
+
 function setRideMapLocation(target, location) {
   if (target === "destination") {
     state.pendingDestinationLocation = {
@@ -2717,6 +2764,9 @@ function setRideMapLocation(target, location) {
     if (status) status.textContent = "Punto A listo para esta solicitud.";
     state.rideMapPickerTarget = "destination";
   }
+  setRideAddressFallback(target, "map");
+  const locationForm = app.querySelector("#ride-location-step-form");
+  if (locationForm) saveCustomerRideDraft(Object.fromEntries(new FormData(locationForm)));
   updateRideMapPickerUi();
   mountCustomerRideMap();
   void refreshCustomerRideQuote();
@@ -3759,7 +3809,7 @@ function renderPanelBackButton(label = "Volver") {
 function renderDriverWorkspacePanel(driver, hasActiveJourney) {
   const activePanel = state.driverNav || "requests";
   const withBack = content => activePanel === "requests"
-    ? content
+    ? `${renderPanelBackButton("Cliente")}${content}`
     : `${renderPanelBackButton("Solicitudes")}${content}`;
   if (activePanel === "account") {
     return withBack(`${renderDriverPanel(driver, true)}${renderSafetyPanel("conductor")}`);
@@ -4356,7 +4406,7 @@ function renderDriverPendingOfferPanel(offer) {
         <div><span class="route-letter route-letter-b">B</span><p><small>Destino</small><strong>${formatDriverOfferAddress(offer.destinationAddress)}</strong></p></div>
       </div>
       <div class="driver-pending-offer-timer"><strong data-driver-pending-offer-countdown>—</strong><div class="driver-pending-offer-timer-bar"><i data-driver-pending-offer-progress></i></div></div>
-      <p class="driver-pending-offer-note">Te avisaremos con sonido y voz si el pasajero elige tu propuesta. Mientras tanto, la oferta queda reservada para esta única solicitud.</p>
+      <p class="driver-pending-offer-note">Enviar una oferta todavía no asigna el servicio: el pasajero debe elegirla. Para evitar aceptar dos carreras a la vez, esta oferta queda pendiente hasta 60 segundos; si no te eligen, se libera y podrás tomar otra.</p>
       <div class="driver-pending-offer-actions"><button class="button button-secondary" type="button" data-refresh-dispatch>Actualizar estado</button><button class="button button-quiet" type="button" data-driver-nav="dispatch">Ver demanda</button></div>
     </article>`;
 }
@@ -4366,10 +4416,16 @@ function renderDriverOfferSheet(offer) {
   const appearance = getPlatformAppearance();
   const requestedFare = Number(offer?.proposedPriceCop) || 0;
   const distanceReferenceFare = Number(offer?.directDistanceReferenceFareCop) || 0;
-  const counterOfferBase = Math.max(requestedFare, distanceReferenceFare);
+  const fairFare = distanceReferenceFare > 0
+    ? distanceReferenceFare
+    : Math.max(requestedFare, Number(offer?.minimumFareCopAtRequest) || 0);
+  const maximumDriverFare = Math.min(Number.MAX_SAFE_INTEGER, fairFare * 2);
+  // Los incrementos se calculan sobre el precio que propuso el pasajero,
+  // mientras que la referencia justa solo fija el techo permitido.
+  const counterOfferBase = requestedFare || fairFare;
   const counterOfferSuggestions = [500, 1000, 1500]
     .map(increment => counterOfferBase + increment)
-    .filter(price => Number.isFinite(price) && price > counterOfferBase);
+    .filter(price => Number.isFinite(price) && price > counterOfferBase && price <= maximumDriverFare);
   const counterOfferButtons = counterOfferSuggestions.map(price => `
     <button class="button driver-quick-counter-offer" type="button" data-quick-counter-offer="${escapeHtml(offer.id)}" data-counter-offer-price="${price}">
       <span>Enviar</span><strong>${formatCop(price)}</strong>
@@ -4385,8 +4441,10 @@ function renderDriverOfferSheet(offer) {
       <div class="driver-offer-action-stack">
         <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}"><span>Enviar oferta por</span><strong>${formatCop(offer.proposedPriceCop)}</strong></button>
         <div class="driver-counter-sheet" aria-label="Contraofertas rápidas">
-          <label>Propuestas rápidas · suben de $500 en $500</label>
-          <div class="driver-counter-options">${counterOfferButtons}</div>
+          <label>Propuestas rápidas · máximo ${formatCop(maximumDriverFare)} (hasta +100 % de la tarifa justa)</label>
+          ${counterOfferButtons
+            ? `<div class="driver-counter-options">${counterOfferButtons}</div>`
+            : '<p class="small-text">La tarifa solicitada ya está en el máximo permitido; puedes enviarla tal como está.</p>'}
         </div>
       </div>
     </section>`;
@@ -4911,8 +4969,8 @@ function renderCustomerRideLocationsStep() {
           <p class="small-text muted">El mapa es opcional. Si editas una dirección después de marcarla, el punto se quitará para evitar enviar una ubicación equivocada.</p>
         </section>
         <div class="ride-auto-route-action">
-          <button class="button button-primary" type="button" data-geocode-ride>Calcular tarifa con direcciones</button>
-          <small>Escribe A y B y HÁGALE las ubicará automáticamente. El mapa queda como alternativa.</small>
+          <button class="button button-primary" type="button" data-geocode-ride>Calcular tarifa</button>
+          <small>Se usan directamente los puntos elegidos con GPS o mapa. Solo se busca en el mapa una dirección escrita si ese punto aún no tiene ubicación.</small>
         </div>
         <div class="button-row customer-request-actions">
           <button class="button button-primary customer-next-step" type="submit">Continuar con tarifa <span aria-hidden="true">→</span></button>
@@ -5013,9 +5071,10 @@ function renderCustomerSearchingPanel(rideRequest) {
     ? `<div class="customer-driver-offer-list">${offers.map(renderOffer).join("")}</div>`
     : windowOpen
       ? `<div class="customer-offer-empty"><strong>Aún no hay propuestas</strong><span>Estamos mostrando tu solicitud a conductores cercanos.</span></div>`
-      : `<div class="customer-offer-empty is-finished"><strong>La ronda terminó</strong><span>Puedes abrir otra ronda para recibir propuestas nuevas.</span><button class="button button-primary" type="button" data-restart-driver-offers="${rideRequest.id}">Buscar más conductores</button></div>`;
+      : `<div class="customer-offer-empty is-finished"><strong>Reanudando búsqueda</strong><span>Si aún no eliges conductor, HÁGALE abrirá otra ronda automáticamente.</span></div>`;
   return `
     <section class="customer-search-card" aria-live="polite">
+      ${renderPanelBackButton("Historial")}
       <div class="customer-search-map" aria-hidden="true">
         <span class="search-map-road search-map-road-one"></span><span class="search-map-road search-map-road-two"></span>
         <span class="search-map-pin search-map-pin-a">A</span><span class="search-map-pin search-map-pin-b">B</span>
@@ -5030,7 +5089,7 @@ function renderCustomerSearchingPanel(rideRequest) {
           <div><span class="route-letter route-letter-a">A</span><strong>${escapeHtml(rideRequest.pickupAddress)}</strong></div>
           <div><span class="route-letter route-letter-b">B</span><strong>${escapeHtml(rideRequest.destinationAddress)}</strong></div>
         </div>
-        <div class="customer-offer-progress"><div><span>${offers.length === 1 ? "1 propuesta recibida" : `${offers.length} propuestas recibidas`}</span><strong data-customer-offer-countdown>${windowOpen ? "—" : "Ronda finalizada"}</strong></div><span class="customer-offer-progress-track"><i data-customer-offer-progress></i></span></div>
+        <div class="customer-offer-progress"><div><span>${offers.length === 1 ? "1 propuesta recibida" : `${offers.length} propuestas recibidas`} · ronda ${board?.searchRound || 1}</span><strong data-customer-offer-countdown>${windowOpen ? "—" : "Reanudando…"}</strong></div><span class="customer-offer-progress-track"><i data-customer-offer-progress></i></span></div>
         ${offerContent}
         <div class="customer-search-offer"><span>Tu valor inicial</span><strong>${formatCop(rideRequest.proposedPriceCop)}</strong><small>${escapeHtml(getRidePaymentMethodLabel(rideRequest))} · ${escapeHtml(getRideFareModeLabel(rideRequest))}</small></div>
         <div class="customer-search-actions">
@@ -5046,6 +5105,7 @@ function renderCustomerCounterOfferPanel(rideRequest) {
   const counterOffer = rideRequest.counterOfferPriceCop || rideRequest.proposedPriceCop;
   return `
     <section class="customer-counteroffer-card" aria-live="polite">
+      ${renderPanelBackButton("Historial")}
       <div class="customer-counteroffer-icon" aria-hidden="true">↔</div>
       <div class="customer-counteroffer-content">
         ${renderCustomerRideStepIndicator("search")}
@@ -5295,6 +5355,9 @@ async function captureRideLocation(target) {
     } else {
       state.pendingPickupLocation = { pickupLatitude: latitude, pickupLongitude: longitude };
     }
+    setRideAddressFallback(target, "gps");
+    const locationForm = app.querySelector("#ride-location-step-form");
+    if (locationForm) saveCustomerRideDraft(Object.fromEntries(new FormData(locationForm)));
     if (status) status.textContent = isDestination
       ? "Punto B listo para esta solicitud."
       : "Punto A listo para esta solicitud.";
@@ -5387,6 +5450,13 @@ function goBackPanel() {
 
   if (state.customerNav === "ride" && state.customerRideStep === "details") {
     setCustomerRideStep("locations");
+    return;
+  }
+  if (state.customerNav === "ride" && state.customerRideStep === "locations") {
+    state.customerNav = "history";
+    sessionStorage.setItem(customerNavKey, state.customerNav);
+    renderDashboard();
+    app.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
   const previousPanel = {
@@ -5988,16 +6058,49 @@ function getSelectedDocumentFile(formData) {
   return candidates.find(value => value instanceof File && value.size > 0) || null;
 }
 
-function continueRideRequestDetails(event) {
+async function continueRideRequestDetails(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.currentTarget));
-  const pickupAddress = String(data.pickupAddress || "").trim();
-  const destinationAddress = String(data.destinationAddress || "").trim();
+  let pickupAddress = String(data.pickupAddress || "").trim();
+  let destinationAddress = String(data.destinationAddress || "").trim();
   const pickupNeighborhood = String(data.pickupNeighborhood || "").trim();
   const destinationNeighborhood = String(data.destinationNeighborhood || "").trim();
-  if (pickupAddress.length < 5 || destinationAddress.length < 5) {
-    showNotice("Escribe una dirección válida para A y otra para B.", true);
+  const pickupPoint = toMapCoordinate(
+    state.pendingPickupLocation?.pickupLatitude,
+    state.pendingPickupLocation?.pickupLongitude
+  );
+  const destinationPoint = toMapCoordinate(
+    state.pendingDestinationLocation?.destinationLatitude,
+    state.pendingDestinationLocation?.destinationLongitude
+  );
+  if ((!pickupPoint && pickupAddress.length < 5) || (!destinationPoint && destinationAddress.length < 5)) {
+    showNotice("Escribe la dirección del punto que falta o márcalo con GPS/mapa.", true);
     return;
+  }
+
+  const button = event.submitter;
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Calculando tarifa…";
+  }
+  try {
+    const cityCode = String(state.customerRideDraft?.pricingRuleKey || "").split("|")[0]
+      || state.pricingRules?.find(rule => rule.isActive)?.cityCode
+      || "BUC";
+    const [pickup, destination] = await Promise.all([
+      pickupPoint || searchRideAddressCoordinates(pickupAddress, pickupNeighborhood, cityCode),
+      destinationPoint || searchRideAddressCoordinates(destinationAddress, destinationNeighborhood, cityCode)
+    ]);
+    state.pendingPickupLocation = { pickupLatitude: pickup.latitude, pickupLongitude: pickup.longitude };
+    state.pendingDestinationLocation = { destinationLatitude: destination.latitude, destinationLongitude: destination.longitude };
+  } catch (error) {
+    showNotice(error.message || "No fue posible ubicar uno de los puntos. Márcalo en el mapa o vuelve a intentarlo.", true);
+    return;
+  } finally {
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.innerHTML = 'Continuar con tarifa <span aria-hidden="true">→</span>';
+    }
   }
 
   saveCustomerRideDraft({ pickupAddress, pickupNeighborhood, destinationAddress, destinationNeighborhood });

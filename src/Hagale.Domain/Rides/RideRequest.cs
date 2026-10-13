@@ -202,7 +202,11 @@ public sealed class RideRequest
     /// Registra una propuesta para que el cliente la compare; no asigna ni
     /// bloquea el servicio hasta que el cliente elija al conductor.
     /// </summary>
-    public RideDriverOffer AddDriverOffer(Guid driverProfileId, int priceCop, DateTimeOffset offeredAtUtc)
+    public RideDriverOffer AddDriverOffer(
+        Guid driverProfileId,
+        int priceCop,
+        DateTimeOffset offeredAtUtc,
+        int? maximumDriverPriceCop = null)
     {
         if (driverProfileId == Guid.Empty)
         {
@@ -222,6 +226,11 @@ public sealed class RideRequest
         if (priceCop < MinimumFareCopAtRequest)
         {
             throw new DomainRuleViolationException("La oferta no puede ser inferior a la tarifa mínima vigente.");
+        }
+
+        if (maximumDriverPriceCop.HasValue && priceCop > maximumDriverPriceCop.Value)
+        {
+            throw new DomainRuleViolationException("La oferta supera el máximo permitido: hasta el doble de la tarifa justa estimada.");
         }
 
         if (_driverOffers.Any(offer =>
@@ -286,6 +295,11 @@ public sealed class RideRequest
             throw new DomainRuleViolationException("Solo una solicitud pendiente puede buscar conductores nuevamente.");
         }
 
+        if (IsOfferWindowOpenAt(restartedAtUtc))
+        {
+            throw new DomainRuleViolationException("La ronda actual sigue abierta; la siguiente comenzará cuando termine el minuto.");
+        }
+
         ClosePendingDriverOffers(restartedAtUtc);
         OfferSearchRound++;
         OfferWindowEndsAtUtc = restartedAtUtc.AddSeconds(OfferCollectionWindowSeconds);
@@ -303,7 +317,11 @@ public sealed class RideRequest
             offer.SearchRound == OfferSearchRound &&
             offer.IsPendingAt(atUtc));
 
-    public void MakeCounterOffer(Guid driverProfileId, int priceCop, DateTimeOffset offeredAtUtc)
+    public void MakeCounterOffer(
+        Guid driverProfileId,
+        int priceCop,
+        DateTimeOffset offeredAtUtc,
+        int? maximumDriverPriceCop = null)
     {
         if (driverProfileId == Guid.Empty)
         {
@@ -318,6 +336,11 @@ public sealed class RideRequest
         if (priceCop < MinimumFareCopAtRequest)
         {
             throw new DomainRuleViolationException("La contraoferta no puede ser inferior a la tarifa mínima vigente.");
+        }
+
+        if (maximumDriverPriceCop.HasValue && priceCop > maximumDriverPriceCop.Value)
+        {
+            throw new DomainRuleViolationException("La contraoferta supera el máximo permitido: hasta el doble de la tarifa justa estimada.");
         }
 
         AssignedDriverProfileId = driverProfileId;

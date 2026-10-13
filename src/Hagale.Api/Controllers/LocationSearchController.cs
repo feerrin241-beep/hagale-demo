@@ -44,8 +44,16 @@ public sealed class LocationSearchController(HttpClient httpClient, IMemoryCache
             return Ok(cached);
         }
 
+        var receivedProviderResponse = false;
+        using var overallTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        overallTimeout.CancelAfter(TimeSpan.FromSeconds(12));
         foreach (var searchText in BuildSearchQueries(normalizedQuery, cityHint))
         {
+            if (overallTimeout.IsCancellationRequested)
+            {
+                break;
+            }
+
             var providers = new[]
             {
                 (Uri: $"{PhotonEndpoint}?lang=es&limit=3&q={Uri.EscapeDataString(searchText)}", Parser: "photon"),
@@ -54,8 +62,8 @@ public sealed class LocationSearchController(HttpClient httpClient, IMemoryCache
 
             foreach (var provider in providers)
             {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(8));
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(overallTimeout.Token);
+                timeout.CancelAfter(TimeSpan.FromSeconds(4));
                 using var outboundRequest = new HttpRequestMessage(HttpMethod.Get, provider.Uri);
                 outboundRequest.Headers.UserAgent.ParseAdd("HAGALE/0.1 (+https://hagale-demo.onrender.com)");
                 outboundRequest.Headers.Accept.ParseAdd("application/json");
@@ -67,6 +75,8 @@ public sealed class LocationSearchController(HttpClient httpClient, IMemoryCache
                     {
                         continue;
                     }
+
+                    receivedProviderResponse = true;
 
                     await using var responseStream = await response.Content.ReadAsStreamAsync(timeout.Token);
                     using var document = await JsonDocument.ParseAsync(responseStream, cancellationToken: timeout.Token);
@@ -83,7 +93,10 @@ public sealed class LocationSearchController(HttpClient httpClient, IMemoryCache
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    // Try the next provider/query before returning a user-facing error.
+                    if (overallTimeout.IsCancellationRequested)
+                    {
+                        break;
+                    }
                 }
                 catch (HttpRequestException)
                 {
@@ -95,18 +108,19 @@ public sealed class LocationSearchController(HttpClient httpClient, IMemoryCache
                 }
             }
         }
-        return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails { Detail = "No se pudo ubicar la dirección ahora. Puedes elegir el punto en el mapa." });
+        return receivedProviderResponse
+            ? NotFound(new ProblemDetails { Detail = "No encontramos esa dirección. Completa la calle, barrio y ciudad, o marca el punto exacto en el mapa." })
+            : StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails { Detail = "El servicio de direcciones no respondió. Puedes marcar el punto exacto en el mapa y calcular la tarifa con GPS." });
     }
 
     private static string NormalizeQuery(string value)
     {
-        return value.Trim()
+        var normalized = value.Trim()
             .Replace("N.º", " ", StringComparison.OrdinalIgnoreCase)
             .Replace("N°", " ", StringComparison.OrdinalIgnoreCase)
             .Replace("No.", " ", StringComparison.OrdinalIgnoreCase)
-            .Replace("#", " ", StringComparison.Ordinal)
-            .Replace("  ", " ", StringComparison.Ordinal)
-            .Trim();
+            .Replace("#", " ", StringComparison.Ordinal);
+        return System.Text.RegularExpressions.Regex.Replace(normalized, @"\s+", " ").Trim();
     }
 
     private static IReadOnlyCollection<string> BuildSearchQueries(string query, string cityHint)
@@ -121,8 +135,7 @@ public sealed class LocationSearchController(HttpClient httpClient, IMemoryCache
         {
             withCity,
             $"{streetOnly}, {cityHint}",
-            $"{withoutHouseNumber}, {cityHint}",
-            cityHint
+            $"{withoutHouseNumber}, {cityHint}"
         }
         .Where(value => value.Length >= 4)
         .Distinct(StringComparer.OrdinalIgnoreCase)
