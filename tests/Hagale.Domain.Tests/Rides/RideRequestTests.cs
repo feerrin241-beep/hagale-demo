@@ -194,4 +194,34 @@ public sealed class RideRequestTests
         Assert.Null(request.AssignedDriverProfileId);
         Assert.Null(request.CounterOfferPriceCop);
     }
+
+    [Fact]
+    public void Driver_offer_near_round_end_remains_visible_and_selectable_for_its_own_minute()
+    {
+        var requestedAt = new DateTimeOffset(2026, 10, 13, 12, 0, 0, TimeSpan.Zero);
+        var driverProfileId = Guid.NewGuid();
+        var request = new RideRequest(
+            Guid.NewGuid(),
+            "Calle 72 # 10-07, Bucaramanga",
+            "Aeropuerto Palonegro, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            5_700,
+            3_500,
+            requestedAt);
+
+        var offer = request.AddDriverOffer(driverProfileId, 6_200, requestedAt.AddSeconds(55));
+        request.RestartOfferCollection(requestedAt.AddSeconds(60));
+
+        Assert.Equal(requestedAt.AddSeconds(115), offer.ExpiresAtUtc);
+        Assert.True(request.HasPendingOfferFromDriver(driverProfileId, requestedAt.AddSeconds(70)));
+        Assert.Equal(2, request.OfferSearchRound);
+        Assert.Throws<DomainRuleViolationException>(() =>
+            request.AddDriverOffer(driverProfileId, 6_400, requestedAt.AddSeconds(70)));
+
+        var selected = request.SelectDriverOffer(offer.Id, requestedAt.AddSeconds(70));
+
+        Assert.Equal(6_200, selected.OfferedPriceCop);
+        Assert.Equal(RideRequestStatus.Accepted, request.Status);
+    }
 }

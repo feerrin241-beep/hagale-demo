@@ -235,8 +235,7 @@ public sealed class RideRequest
 
         if (_driverOffers.Any(offer =>
                 offer.DriverProfileId == driverProfileId &&
-                offer.SearchRound == OfferSearchRound &&
-                offer.Status == RideDriverOfferStatus.Pending))
+                offer.IsPendingAt(offeredAtUtc)))
         {
             throw new DomainRuleViolationException("Ya enviaste una oferta para esta solicitud.");
         }
@@ -246,7 +245,7 @@ public sealed class RideRequest
             driverProfileId,
             priceCop,
             offeredAtUtc,
-            GetOfferWindowEndUtc(),
+            offeredAtUtc.AddSeconds(OfferCollectionWindowSeconds),
             OfferSearchRound);
         _driverOffers.Add(offer);
         return offer;
@@ -263,13 +262,8 @@ public sealed class RideRequest
             throw new DomainRuleViolationException("Esta solicitud ya no está disponible para seleccionar una oferta.");
         }
 
-        if (!IsOfferWindowOpenAt(selectedAtUtc))
-        {
-            throw new DomainRuleViolationException("El tiempo para elegir una oferta terminó. Puedes buscar conductores nuevamente.");
-        }
-
         var selectedOffer = _driverOffers.SingleOrDefault(offer => offer.Id == offerId);
-        if (selectedOffer is null || selectedOffer.SearchRound != OfferSearchRound || !selectedOffer.IsPendingAt(selectedAtUtc))
+        if (selectedOffer is null || !selectedOffer.IsPendingAt(selectedAtUtc))
         {
             throw new DomainRuleViolationException("Esta oferta ya no está disponible. Actualiza las propuestas recibidas.");
         }
@@ -300,7 +294,8 @@ public sealed class RideRequest
             throw new DomainRuleViolationException("La ronda actual sigue abierta; la siguiente comenzará cuando termine el minuto.");
         }
 
-        ClosePendingDriverOffers(restartedAtUtc);
+        // Una ronda nueva permite recibir más propuestas, pero las propuestas
+        // ya enviadas siguen visibles y elegibles hasta cumplir su propio minuto.
         OfferSearchRound++;
         OfferWindowEndsAtUtc = restartedAtUtc.AddSeconds(OfferCollectionWindowSeconds);
     }
@@ -314,7 +309,6 @@ public sealed class RideRequest
     public bool HasPendingOfferFromDriver(Guid driverProfileId, DateTimeOffset atUtc) =>
         _driverOffers.Any(offer =>
             offer.DriverProfileId == driverProfileId &&
-            offer.SearchRound == OfferSearchRound &&
             offer.IsPendingAt(atUtc));
 
     public void MakeCounterOffer(

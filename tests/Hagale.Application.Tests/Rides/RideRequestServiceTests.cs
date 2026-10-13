@@ -280,6 +280,102 @@ public sealed class RideRequestServiceTests
     }
 
     [Fact]
+    public async Task Counter_offer_preserves_selected_price_and_reaches_customer_after_repeated_concurrent_updates()
+    {
+        var customerUserId = Guid.NewGuid();
+        var driverUserId = Guid.NewGuid();
+        var request = new RideRequest(
+            customerUserId,
+            "Calle 72 # 10-07, Bucaramanga",
+            "Aeropuerto Palonegro, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            5_700,
+            3_500,
+            DateTimeOffset.UtcNow);
+        var rides = new InMemoryRideRequestRepository();
+        rides.Add(request);
+        var driver = CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle);
+        var drivers = new InMemoryDriverRepository();
+        drivers.Add(driver);
+
+        var simulatedConcurrentUpdatesRemaining = 2;
+        void SimulateConcurrentUpdate(RideRequest currentRequest)
+        {
+            var offersField = typeof(RideRequest).GetField(
+                "_driverOffers",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            var offers = (List<RideDriverOffer>)offersField.GetValue(currentRequest)!;
+            offers.RemoveAll(offer => offer.DriverProfileId == driver.Id);
+            currentRequest.AddDriverOffer(Guid.NewGuid(), 8_500 + simulatedConcurrentUpdatesRemaining * 500, DateTimeOffset.UtcNow);
+            simulatedConcurrentUpdatesRemaining--;
+            if (simulatedConcurrentUpdatesRemaining > 0)
+            {
+                rides.BeforeNextSaveFailure = SimulateConcurrentUpdate;
+            }
+        }
+        rides.BeforeNextSaveFailure = SimulateConcurrentUpdate;
+
+        var service = new RideRequestService(
+            rides,
+            new InMemoryPricingRuleRepository(),
+            drivers,
+            new ExistingUserDirectory(customerUserId, driverUserId),
+            TimeProvider.System);
+
+        var submitted = await service.MakeCounterOfferAsync(
+            driverUserId,
+            request.Id,
+            new CreateCounterOfferCommand(6_200));
+        var customerBoard = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
+
+        Assert.True(submitted.IsSuccess, submitted.Error);
+        Assert.Equal(6_200, submitted.Value!.PendingDriverOfferPriceCop);
+        var customerOffer = Assert.Single(customerBoard!.Offers);
+        Assert.Equal(6_200, customerOffer.OfferedPriceCop);
+    }
+
+    [Fact]
+    public async Task Customer_keeps_a_recent_driver_offer_when_the_next_search_round_starts()
+    {
+        var customerUserId = Guid.NewGuid();
+        var driverUserId = Guid.NewGuid();
+        var requestedAt = new DateTimeOffset(2026, 10, 13, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new AdjustableTimeProvider(requestedAt.AddSeconds(55));
+        var request = new RideRequest(
+            customerUserId,
+            "Calle 72 # 10-07, Bucaramanga",
+            "Aeropuerto Palonegro, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            5_700,
+            3_500,
+            requestedAt);
+        var rides = new InMemoryRideRequestRepository();
+        rides.Add(request);
+        var drivers = new InMemoryDriverRepository();
+        drivers.Add(CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle));
+        var service = new RideRequestService(
+            rides,
+            new InMemoryPricingRuleRepository(),
+            drivers,
+            new ExistingUserDirectory(customerUserId, driverUserId),
+            timeProvider);
+
+        var submitted = await service.MakeCounterOfferAsync(
+            driverUserId,
+            request.Id,
+            new CreateCounterOfferCommand(6_200));
+        timeProvider.Advance(TimeSpan.FromSeconds(6));
+        var customerBoard = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
+
+        Assert.True(submitted.IsSuccess, submitted.Error);
+        Assert.Equal(2, customerBoard!.SearchRound);
+        var customerOffer = Assert.Single(customerBoard.Offers);
+        Assert.Equal(6_200, customerOffer.OfferedPriceCop);
+    }
+
+    [Fact]
     public async Task Customer_selection_is_confirmed_if_the_same_offer_was_committed_during_a_retry()
     {
         var customerUserId = Guid.NewGuid();
@@ -840,6 +936,15 @@ public sealed class RideRequestServiceTests
             Task.FromResult<BasicUserProfile?>(existingUserIds.Contains(userId)
                 ? new BasicUserProfile("Perfil", "HÁGALE")
                 : null);
+    }
+
+    private sealed class AdjustableTimeProvider(DateTimeOffset initialUtcNow) : TimeProvider
+    {
+        private DateTimeOffset currentUtcNow = initialUtcNow;
+
+        public override DateTimeOffset GetUtcNow() => currentUtcNow;
+
+        public void Advance(TimeSpan duration) => currentUtcNow += duration;
     }
 
     private sealed class RecordingRideRealtimeNotifier : IRideRealtimeNotifier
