@@ -80,6 +80,7 @@ const state = {
   rideChatLoadingIds: new Set(),
   hiddenDriverOfferIds: new Set(),
   driverOfferSubmissionIds: new Set(),
+  driverOfferSubmissionVersion: 0,
   dispatchPollingTimer: null,
   driverMap: null,
   customerRideMap: null,
@@ -1139,6 +1140,7 @@ function getDispatchOffersUrl() {
 async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
   if (!state.profile?.roles.includes("Driver")) return;
 
+  const refreshSubmissionVersion = state.driverOfferSubmissionVersion;
   const previousIds = new Set((state.driverRideOffers || []).map(offer => offer.id));
   const previousCurrentRideId = state.driverCurrentRideRequest?.id || null;
   const previousCurrentRideStatus = state.driverCurrentRideRequest?.status || null;
@@ -1151,6 +1153,12 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
     request("/driver/ride-requests/activity-summary"),
     request("/driver/ride-requests/completed")
   ]);
+  // A poll may have started before the offer POST reached the server. Ignore
+  // its response if a newer submit/result happened while its GETs were in
+  // flight, rather than letting a stale empty response restore the inbox.
+  if (refreshSubmissionVersion !== state.driverOfferSubmissionVersion) {
+    return { offerSetChanged: false, currentRideChanged: false, pendingOfferChanged: false, newOfferCount: 0 };
+  }
   state.driverRideOffers = offers;
   state.driverCurrentRideRequest = currentRequest;
   state.driverPendingRideOffer = pendingOffer;
@@ -5815,7 +5823,7 @@ function bindDriverEvents() {
     button.addEventListener("click", () => restartCustomerDriverOffers(button.dataset.restartDriverOffers));
   });
   app.querySelectorAll("[data-accept-ride]").forEach(button => {
-    button.addEventListener("click", () => acceptRideRequest(button.dataset.acceptRide));
+    button.addEventListener("click", () => acceptRideRequest(button.dataset.acceptRide, "button", button));
   });
   app.querySelectorAll("[data-repeat-driver-route]").forEach(button => {
     button.addEventListener("click", () => repeatDriverRoute(button.dataset.repeatDriverRoute));
@@ -6266,6 +6274,7 @@ async function restartCustomerDriverOffers(rideRequestId) {
 }
 
 function applyPendingDriverOffer(offer, message) {
+  state.driverOfferSubmissionVersion += 1;
   state.driverPendingRideOffer = offer;
   state.driverCurrentRideRequest = null;
   state.selectedDriverOfferId = null;
@@ -6323,10 +6332,17 @@ async function recoverDriverOfferConflict(rideRequestId, error, retryRequest = n
   }
 }
 
-async function acceptRideRequest(rideRequestId, source = "button") {
+async function acceptRideRequest(rideRequestId, source = "button", button = null) {
   stopDriverVoiceAcceptance();
   if (state.driverOfferSubmissionIds.has(rideRequestId)) return;
   state.driverOfferSubmissionIds.add(rideRequestId);
+  state.driverOfferSubmissionVersion += 1;
+  const originalButtonContent = button?.innerHTML;
+  if (button) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    button.innerHTML = "<span>Enviando oferta…</span>";
+  }
   const submit = () => request(`/driver/ride-requests/${rideRequestId}/accept`, {
     method: "POST",
     data: {}
@@ -6343,6 +6359,11 @@ async function acceptRideRequest(rideRequestId, source = "button") {
     if (!await recoverDriverOfferConflict(rideRequestId, error, submit, successMessage)) showNotice(error.message, true);
   } finally {
     state.driverOfferSubmissionIds.delete(rideRequestId);
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      button.innerHTML = originalButtonContent;
+    }
   }
 }
 
@@ -6354,6 +6375,16 @@ async function sendCounterOffer(rideRequestId, priceCop) {
   }
   if (state.driverOfferSubmissionIds.has(rideRequestId)) return;
   state.driverOfferSubmissionIds.add(rideRequestId);
+  state.driverOfferSubmissionVersion += 1;
+  const button = [...app.querySelectorAll("[data-quick-counter-offer]")].find(candidate =>
+    candidate.dataset.quickCounterOffer === rideRequestId
+    && Number(candidate.dataset.counterOfferPrice) === normalizedPrice) || null;
+  const originalButtonContent = button?.innerHTML;
+  if (button) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    button.innerHTML = "<strong>Enviando…</strong>";
+  }
   const submit = () => request(`/driver/ride-requests/${rideRequestId}/counter-offer`, {
     method: "POST",
     data: { priceCop: normalizedPrice }
@@ -6366,6 +6397,11 @@ async function sendCounterOffer(rideRequestId, priceCop) {
     if (!await recoverDriverOfferConflict(rideRequestId, error, submit, successMessage)) showNotice(error.message, true);
   } finally {
     state.driverOfferSubmissionIds.delete(rideRequestId);
+    if (button?.isConnected) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      button.innerHTML = originalButtonContent;
+    }
   }
 }
 
