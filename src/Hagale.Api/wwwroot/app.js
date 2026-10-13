@@ -47,6 +47,8 @@ const state = {
   application: null,
   rideRequests: [],
   customerDriverOfferBoard: null,
+  customerOfferBoardRequestVersion: 0,
+  customerRideStatusRequestVersion: 0,
   customerOfferSelectionIds: new Set(),
   customerOfferCountdownTimer: null,
   driverRideOffers: [],
@@ -1957,11 +1959,20 @@ function getCustomerOfferBoardSignature(board) {
 
 async function refreshCustomerDriverOfferBoard(rideRequest = getOpenCustomerRideRequest()) {
   if (!rideRequest || rideRequest.status !== "Pending") {
+    state.customerOfferBoardRequestVersion += 1;
     state.customerDriverOfferBoard = null;
     return null;
   }
 
+  const requestVersion = ++state.customerOfferBoardRequestVersion;
   const board = await request(`/ride-requests/${rideRequest.id}/driver-offers`);
+  const currentRide = getOpenCustomerRideRequest();
+  if (requestVersion !== state.customerOfferBoardRequestVersion
+    || currentRide?.id !== rideRequest.id
+    || currentRide?.status !== "Pending") {
+    return state.customerDriverOfferBoard;
+  }
+
   state.customerDriverOfferBoard = board;
   return board;
 }
@@ -2480,12 +2491,14 @@ async function refreshCustomerRideTracking({ notifyJourneyChange = false } = {})
 }
 
 async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
+  const requestVersion = ++state.customerRideStatusRequestVersion;
   const previousOpenRide = getOpenCustomerRideRequest();
   const previousRideId = previousOpenRide?.id || null;
   const previousStatus = previousOpenRide?.status || null;
   const previousOfferBoardSignature = getCustomerOfferBoardSignature(state.customerDriverOfferBoard);
   const previousOfferIds = new Set((state.customerDriverOfferBoard?.offers || []).map(offer => offer.id));
   const requests = await request("/ride-requests/me");
+  if (requestVersion !== state.customerRideStatusRequestVersion) return getOpenCustomerRideRequest();
   state.rideRequests = requests;
 
   const currentOpenRide = getOpenCustomerRideRequest();
@@ -2493,8 +2506,10 @@ async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
   if (currentOpenRide?.status === "Pending") {
     await refreshCustomerDriverOfferBoard(currentOpenRide);
   } else {
+    state.customerOfferBoardRequestVersion += 1;
     state.customerDriverOfferBoard = null;
   }
+  if (requestVersion !== state.customerRideStatusRequestVersion) return getOpenCustomerRideRequest();
   const offerBoardChanged = getCustomerOfferBoardSignature(state.customerDriverOfferBoard) !== previousOfferBoardSignature;
   const newlyReceivedOffers = (state.customerDriverOfferBoard?.offers || [])
     .filter(offer => !previousOfferIds.has(offer.id));
@@ -2505,6 +2520,7 @@ async function refreshCustomerRideStatus({ notifyJourneyChange = false } = {}) {
     state.customerRideTracking = null;
     destroyCustomerTrackingMap();
   }
+  if (requestVersion !== state.customerRideStatusRequestVersion) return getOpenCustomerRideRequest();
 
   if (currentOpenRide && activeCustomerRideStatuses.has(currentOpenRide.status) && state.customerNav === "ride") {
     state.customerNav = "tracking";
@@ -2591,12 +2607,13 @@ function syncCustomerTrackingPolling(isCustomerMode) {
   // another panel (including Driver mode), but only announce updates while the
   // customer panel is actually visible.
   if (!openRide || (!isCustomerMode && openRide.status !== "Pending")) return;
+  const pollingInterval = openRide.status === "Pending" ? 5_000 : 15_000;
 
   state.customerTrackingPollingTimer = window.setInterval(() => {
     void refreshCustomerRideStatus({ notifyJourneyChange: isCustomerMode }).catch(() => {
       // A future update can retry; the current map remains visible.
     });
-  }, 15_000);
+  }, pollingInterval);
 }
 
 function renderCustomerRideMapFallback(container) {
