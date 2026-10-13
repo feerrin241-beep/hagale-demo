@@ -55,6 +55,14 @@ public sealed class RideRequestRepository(HagaleDbContext database) : IRideReque
 
                 if (database.Database.IsNpgsql())
                 {
+                    // Serialize every writer for this ride across all app instances.
+                    // Unlike an in-process semaphore, a transaction advisory lock
+                    // is shared by every Render instance connected to this database.
+                    var lockKey = BitConverter.ToInt64(rideRequestId.ToByteArray(), 0);
+                    await database.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT pg_advisory_xact_lock({lockKey})",
+                        cancellationToken);
+
                     await database.Database.ExecuteSqlInterpolatedAsync(
                         $"SELECT 1 FROM \"RideRequests\" WHERE \"Id\" = {rideRequestId} FOR UPDATE",
                         cancellationToken);
