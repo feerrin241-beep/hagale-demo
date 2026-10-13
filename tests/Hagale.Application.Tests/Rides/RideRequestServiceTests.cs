@@ -1163,6 +1163,9 @@ public sealed class RideRequestServiceTests
                 }
             }
 
+            public Task SaveDriverOfferAsync(RideDriverOffer offer, CancellationToken cancellationToken = default) =>
+                SaveChangesAsync(cancellationToken);
+
             public ValueTask DisposeAsync()
             {
                 Release();

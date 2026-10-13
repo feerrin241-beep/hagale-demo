@@ -11,4 +11,11 @@ public interface IRideRequestWriteLock : IAsyncDisposable
     RideRequest? Request { get; }
 
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persists a newly submitted driver offer without updating the parent ride
+    /// request row. This avoids optimistic-concurrency conflicts on unrelated
+    /// request changes while the offer itself is serialized by the write lock.
+    /// </summary>
+    Task SaveDriverOfferAsync(RideDriverOffer offer, CancellationToken cancellationToken = default);
 }

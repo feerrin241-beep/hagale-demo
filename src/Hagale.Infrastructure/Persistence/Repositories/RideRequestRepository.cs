@@ -5,6 +5,7 @@ using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Hagale.Infrastructure.Persistence.Repositories;
 
@@ -215,6 +216,85 @@ public sealed class RideRequestRepository(
                     exception,
                     "EF concurrency conflict while saving locked ride request. RequestId={RequestId}; Entries={Entries}; Provider={Provider}",
                     Request?.Id,
+                    entries,
+                    database.Database.ProviderName);
+                await RollbackAndDisposeAsync();
+                throw new ConcurrentUpdateException("La solicitud fue actualizada por otra operación.", exception);
+            }
+            finally
+            {
+                if (completed && transaction is not null)
+                {
+                    await transaction.DisposeAsync();
+                }
+            }
+        }
+
+        public async Task SaveDriverOfferAsync(RideDriverOffer offer, CancellationToken cancellationToken = default)
+        {
+            ObjectDisposedException.ThrowIf(completed, this);
+            ArgumentNullException.ThrowIfNull(offer);
+            try
+            {
+                if (database.Database.IsNpgsql())
+                {
+                    // Offer submission only inserts a child row. Updating the
+                    // tracked aggregate here unnecessarily writes RideRequests
+                    // and its RowVersion, which can conflict with unrelated
+                    // customer refresh/round operations. The request-level
+                    // advisory lock and transaction still serialize all writes.
+                    await database.Database.ExecuteSqlInterpolatedAsync(
+                        $"""
+                        INSERT INTO "RideDriverOffers"
+                            ("Id", "RideRequestId", "DriverProfileId", "OfferedPriceCop", "OfferedAtUtc", "ExpiresAtUtc", "SearchRound", "Status", "ResolvedAtUtc")
+                        VALUES
+                            ({offer.Id}, {offer.RideRequestId}, {offer.DriverProfileId}, {offer.OfferedPriceCop}, {offer.OfferedAtUtc}, {offer.ExpiresAtUtc}, {offer.SearchRound}, {offer.Status.ToString()}, {offer.ResolvedAtUtc})
+                        """,
+                        cancellationToken);
+
+                    // Keep the in-memory aggregate for the response/notifier,
+                    // but prevent a later SaveChanges in this scope from
+                    // attempting to insert the same offer a second time.
+                    var trackedOffer = database.Entry(offer);
+                    if (trackedOffer.State != EntityState.Detached)
+                    {
+                        trackedOffer.State = EntityState.Detached;
+                    }
+                }
+                else
+                {
+                    await database.RideDriverOffers.AddAsync(offer, cancellationToken);
+                    await database.SaveChangesAsync(cancellationToken);
+                }
+
+                if (transaction is not null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                }
+
+                completed = true;
+            }
+            catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Duplicate driver offer prevented by database constraint. RequestId={RequestId}; DriverProfileId={DriverProfileId}; SearchRound={SearchRound}",
+                    offer.RideRequestId,
+                    offer.DriverProfileId,
+                    offer.SearchRound);
+                await RollbackAndDisposeAsync();
+                throw new ConcurrentUpdateException("La oferta ya fue registrada por otra solicitud.", exception);
+            }
+            catch (DbUpdateConcurrencyException exception)
+            {
+                var entries = string.Join(
+                    ", ",
+                    exception.Entries.Select(entry => $"{entry.Metadata.ClrType.Name}:{entry.State}"));
+                logger.LogError(
+                    exception,
+                    "EF concurrency conflict while saving driver offer. RequestId={RequestId}; DriverProfileId={DriverProfileId}; Entries={Entries}; Provider={Provider}",
+                    offer.RideRequestId,
+                    offer.DriverProfileId,
                     entries,
                     database.Database.ProviderName);
                 await RollbackAndDisposeAsync();

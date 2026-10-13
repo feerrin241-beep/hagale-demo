@@ -746,7 +746,7 @@ public sealed class RideRequestService(
                 price,
                 now,
                 offeredPriceCop.HasValue ? maximumDriverPriceCop : null);
-            await requestLock.SaveChangesAsync(cancellationToken);
+            await requestLock.SaveDriverOfferAsync(offer, cancellationToken);
             await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
             return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
                 request,
@@ -844,7 +844,7 @@ public sealed class RideRequestService(
                     price,
                     now,
                     offeredPriceCop.HasValue ? maximumDriverPriceCop : null);
-                await requestLock.SaveChangesAsync(cancellationToken);
+                await requestLock.SaveDriverOfferAsync(offer, cancellationToken);
                 await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
                 return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
                     request,
