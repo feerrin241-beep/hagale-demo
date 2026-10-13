@@ -643,7 +643,95 @@ public sealed class RideRequestService(
         }
         catch (ConcurrentUpdateException)
         {
-            return ApplicationResult<DriverRideRequestDto>.Failure("La solicitud fue actualizada por otro conductor. Actualiza las ofertas.");
+            return await RecoverConcurrentDriverOfferAsync(driver, rideRequestId, offeredPriceCop, cancellationToken);
+        }
+        catch (DomainRuleViolationException exception)
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure(exception.Message);
+        }
+    }
+
+    private async Task<ApplicationResult<DriverRideRequestDto>> RecoverConcurrentDriverOfferAsync(
+        DriverProfile driver,
+        Guid rideRequestId,
+        int? offeredPriceCop,
+        CancellationToken cancellationToken)
+    {
+        var request = await rideRequestRepository.ReloadByIdAsync(rideRequestId, cancellationToken);
+        if (request is null || !CanServe(driver, request))
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure("La solicitud ya no está disponible para tu vehículo o ciudad.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var existingOffer = request.DriverOffers.FirstOrDefault(offer =>
+            offer.DriverProfileId == driver.Id &&
+            offer.SearchRound == request.OfferSearchRound &&
+            offer.IsPendingAt(now));
+        var pricingRule = await pricingRuleRepository.GetByCityAndServiceAsync(
+            request.OperatingCityCode,
+            request.ServiceType,
+            cancellationToken);
+        if (existingOffer is not null)
+        {
+            // A retried tap (or a response lost after persistence) is safe to
+            // treat as success; do not create a second offer for this driver.
+            return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
+                request,
+                CalculatePickupDistance(driver, request),
+                CalculateDirectDistanceReferenceFare(pricingRule, request),
+                pricingRule,
+                existingOffer));
+        }
+
+        if (request.Status != RideRequestStatus.Pending || !request.IsOfferWindowOpenAt(now))
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure(
+                "La solicitud cambió mientras enviabas la oferta y ya no está abierta. Actualicé el estado; revisa otra solicitud.");
+        }
+
+        if (await rideRequestRepository.GetActiveByDriverProfileIdAsync(driver.Id, cancellationToken) is not null)
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure("Ya tienes un servicio activo.");
+        }
+
+        var pendingRequests = await rideRequestRepository.ListPendingAsync(cancellationToken);
+        if (pendingRequests.Any(pending =>
+                pending.Id != rideRequestId && pending.HasPendingOfferFromDriver(driver.Id, now)))
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure(
+                "Ya tienes otra oferta pendiente. Espera la decisión del pasajero antes de enviar una nueva.");
+        }
+
+        var fairFare = CalculateDirectDistanceReferenceFare(pricingRule, request);
+        var maximumDriverPriceCop = CalculateMaximumDriverOfferFare(fairFare, request);
+        var price = offeredPriceCop ?? request.ProposedPriceCop;
+        if (offeredPriceCop.HasValue && price > maximumDriverPriceCop)
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure(
+                $"Tu oferta no puede superar {maximumDriverPriceCop:N0} COP (máximo 100 % por encima de la tarifa justa).");
+        }
+
+        try
+        {
+            var offer = request.AddDriverOffer(
+                driver.Id,
+                price,
+                now,
+                offeredPriceCop.HasValue ? maximumDriverPriceCop : null);
+            await rideRequestRepository.SaveChangesAsync(cancellationToken);
+            await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
+            return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
+                request,
+                CalculatePickupDistance(driver, request),
+                fairFare,
+                pricingRule,
+                offer));
+        }
+        catch (ConcurrentUpdateException)
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure(
+                "La solicitud volvió a cambiar al enviar la oferta. Actualiza la bandeja e inténtalo con una solicitud que siga disponible.");
         }
         catch (DomainRuleViolationException exception)
         {

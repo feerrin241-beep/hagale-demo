@@ -238,6 +238,48 @@ public sealed class RideRequestServiceTests
     }
 
     [Fact]
+    public async Task Driver_offer_reloads_and_retries_when_another_driver_updates_the_request()
+    {
+        var customerUserId = Guid.NewGuid();
+        var driverUserId = Guid.NewGuid();
+        var driver = CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle);
+        var request = new RideRequest(
+            customerUserId,
+            "Calle 72 # 10-07, Bucaramanga",
+            "Aeropuerto Palonegro, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            8_000,
+            3_500,
+            DateTimeOffset.UtcNow);
+        var rideRepository = new InMemoryRideRequestRepository();
+        rideRepository.Add(request);
+        rideRepository.BeforeNextSaveFailure = currentRequest =>
+        {
+            var offersField = typeof(RideRequest).GetField(
+                "_driverOffers",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            var offers = (List<RideDriverOffer>)offersField.GetValue(currentRequest)!;
+            offers.RemoveAll(offer => offer.DriverProfileId == driver.Id);
+            currentRequest.AddDriverOffer(Guid.NewGuid(), 8_500, DateTimeOffset.UtcNow);
+        };
+        var drivers = new InMemoryDriverRepository();
+        drivers.Add(driver);
+        var service = new RideRequestService(
+            rideRepository,
+            new InMemoryPricingRuleRepository(),
+            drivers,
+            new ExistingUserDirectory(customerUserId),
+            TimeProvider.System);
+
+        var offered = await service.AcceptAsync(driverUserId, request.Id);
+
+        Assert.True(offered.IsSuccess);
+        Assert.Equal(2, request.DriverOffers.Count);
+        Assert.Contains(request.DriverOffers, offer => offer.DriverProfileId == driver.Id && offer.OfferedPriceCop == 8_000);
+    }
+
+    [Fact]
     public async Task Selecting_and_advancing_a_service_notifies_only_its_participants()
     {
         var customerUserId = Guid.NewGuid();
@@ -816,10 +858,15 @@ public sealed class RideRequestServiceTests
     {
         private readonly List<RideRequest> _requests = [];
 
+        public Action<RideRequest>? BeforeNextSaveFailure { get; set; }
+
         public void Add(RideRequest rideRequest) => _requests.Add(rideRequest);
 
         public Task<RideRequest?> GetByIdAsync(Guid rideRequestId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_requests.SingleOrDefault(request => request.Id == rideRequestId));
+
+        public Task<RideRequest?> ReloadByIdAsync(Guid rideRequestId, CancellationToken cancellationToken = default) =>
+            GetByIdAsync(rideRequestId, cancellationToken);
 
         public Task<IReadOnlyCollection<RideRequest>> ListByCustomerUserIdAsync(
             Guid customerUserId,
@@ -848,7 +895,17 @@ public sealed class RideRequestServiceTests
                 request.AssignedDriverProfileId == driverProfileId &&
                 request.Status is RideRequestStatus.CounterOfferPending or RideRequestStatus.Accepted or RideRequestStatus.DriverEnRoute or RideRequestStatus.DriverArrived or RideRequestStatus.InProgress));
 
-        public Task SaveChangesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            if (BeforeNextSaveFailure is { } simulateConcurrentUpdate)
+            {
+                BeforeNextSaveFailure = null;
+                simulateConcurrentUpdate(_requests[^1]);
+                throw new Hagale.Application.Common.ConcurrentUpdateException("Simulated concurrent update.");
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class InMemoryDriverRepository : IDriverRepository

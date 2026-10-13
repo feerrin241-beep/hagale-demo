@@ -14,6 +14,27 @@ public sealed class RideRequestRepository(HagaleDbContext database) : IRideReque
             .Include(request => request.DriverOffers)
             .SingleOrDefaultAsync(request => request.Id == rideRequestId, cancellationToken);
 
+    public async Task<RideRequest?> ReloadByIdAsync(Guid rideRequestId, CancellationToken cancellationToken = default)
+    {
+        // After a concurrency exception, discard the stale aggregate and any
+        // uncommitted offer entities before reading the current database state.
+        foreach (var offerEntry in database.ChangeTracker.Entries<RideDriverOffer>()
+                     .Where(entry => entry.Property(offer => offer.RideRequestId).CurrentValue == rideRequestId)
+                     .ToArray())
+        {
+            offerEntry.State = EntityState.Detached;
+        }
+
+        foreach (var requestEntry in database.ChangeTracker.Entries<RideRequest>()
+                     .Where(entry => entry.Entity.Id == rideRequestId)
+                     .ToArray())
+        {
+            requestEntry.State = EntityState.Detached;
+        }
+
+        return await GetByIdAsync(rideRequestId, cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<RideRequest>> ListByCustomerUserIdAsync(
         Guid customerUserId,
         CancellationToken cancellationToken = default) =>

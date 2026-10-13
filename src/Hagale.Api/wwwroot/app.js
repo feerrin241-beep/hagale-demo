@@ -78,6 +78,7 @@ const state = {
   rideChatMessages: {},
   rideChatLoadingIds: new Set(),
   hiddenDriverOfferIds: new Set(),
+  driverOfferSubmissionIds: new Set(),
   dispatchPollingTimer: null,
   driverMap: null,
   customerRideMap: null,
@@ -6221,8 +6222,37 @@ async function restartCustomerDriverOffers(rideRequestId) {
   } catch (error) { showNotice(error.message || "No fue posible buscar nuevos conductores.", true); }
 }
 
+async function recoverDriverOfferConflict(rideRequestId, error) {
+  const looksLikeConflict = error?.statusCode === 409 || /solicitud.*(actualiz|cambi)|actualiz.*solicitud/i.test(error?.message || "");
+  if (!looksLikeConflict) return false;
+
+  try {
+    const pendingOffer = await request("/driver/ride-requests/pending-offer");
+    if (pendingOffer?.id === rideRequestId) {
+      state.driverPendingRideOffer = pendingOffer;
+      state.driverCurrentRideRequest = null;
+      state.selectedDriverOfferId = null;
+      state.driverNav = "requests";
+      state.driverRideOffers = [];
+      state.application = await request("/driver-application/me");
+      renderDashboard();
+      showNotice("Tu oferta ya está registrada. Espera a que el pasajero la revise.");
+      return true;
+    }
+
+    await refreshDriverDispatch();
+    renderDashboard();
+    showNotice("La solicitud cambió mientras enviabas la oferta. Actualicé la bandeja; revisa las solicitudes disponibles.", true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function acceptRideRequest(rideRequestId, source = "button") {
   stopDriverVoiceAcceptance();
+  if (state.driverOfferSubmissionIds.has(rideRequestId)) return;
+  state.driverOfferSubmissionIds.add(rideRequestId);
   try {
     state.driverPendingRideOffer = await request(`/driver/ride-requests/${rideRequestId}/accept`, {
       method: "POST",
@@ -6237,7 +6267,11 @@ async function acceptRideRequest(rideRequestId, source = "button") {
     showNotice(source === "voice"
       ? "Oferta enviada por voz. Espera a que el pasajero elija conductor."
       : "Oferta enviada. El pasajero podrá compararla y elegirla.");
-  } catch (error) { showNotice(error.message, true); }
+  } catch (error) {
+    if (!await recoverDriverOfferConflict(rideRequestId, error)) showNotice(error.message, true);
+  } finally {
+    state.driverOfferSubmissionIds.delete(rideRequestId);
+  }
 }
 
 async function sendCounterOffer(rideRequestId, priceCop) {
@@ -6246,6 +6280,8 @@ async function sendCounterOffer(rideRequestId, priceCop) {
     showNotice("El valor de la contraoferta no es válido.", true);
     return;
   }
+  if (state.driverOfferSubmissionIds.has(rideRequestId)) return;
+  state.driverOfferSubmissionIds.add(rideRequestId);
   try {
     state.driverPendingRideOffer = await request(`/driver/ride-requests/${rideRequestId}/counter-offer`, {
       method: "POST",
@@ -6257,7 +6293,11 @@ async function sendCounterOffer(rideRequestId, priceCop) {
     state.application = await request("/driver-application/me");
     renderDashboard();
     showNotice(`Contraoferta de ${formatCop(normalizedPrice)} enviada. Espera la decisión del pasajero.`);
-  } catch (error) { showNotice(error.message, true); }
+  } catch (error) {
+    if (!await recoverDriverOfferConflict(rideRequestId, error)) showNotice(error.message, true);
+  } finally {
+    state.driverOfferSubmissionIds.delete(rideRequestId);
+  }
 }
 
 async function makeCounterOffer(event, rideRequestId) {
