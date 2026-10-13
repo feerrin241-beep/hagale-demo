@@ -3107,28 +3107,44 @@ async function request(path, options = {}) {
     body = options.form;
   }
 
-  const response = await fetch(`${apiRoot}${path}`, {
-    method: options.method || "GET",
-    headers,
-    body
-  });
+  const timeoutController = Number(options.timeoutMs) > 0 ? new AbortController() : null;
+  const timeoutId = timeoutController
+    ? window.setTimeout(() => timeoutController.abort(), Number(options.timeoutMs))
+    : null;
+  try {
+    const response = await fetch(`${apiRoot}${path}`, {
+      method: options.method || "GET",
+      headers,
+      body,
+      signal: options.signal || timeoutController?.signal
+    });
 
-  const contentType = response.headers.get("content-type") || "";
-  const payload = contentType.includes("json") ? await response.json() : null;
-  if (!response.ok) {
-    if (response.status === 401 && state.token) {
-      signOut(false);
+    const contentType = response.headers.get("content-type") || "";
+    const payload = contentType.includes("json") ? await response.json() : null;
+    if (!response.ok) {
+      if (response.status === 401 && state.token) {
+        signOut(false);
+      }
+      const modelErrors = payload?.errors
+        ? Object.values(payload.errors).flat().join(" ")
+        : null;
+      const detail = modelErrors || payload?.detail || payload?.title;
+      const error = new Error(detail || `No fue posible completar la operación (${options.method || "GET"} ${path}: ${response.status}).`);
+      error.statusCode = response.status;
+      throw error;
     }
-    const modelErrors = payload?.errors
-      ? Object.values(payload.errors).flat().join(" ")
-      : null;
-    const detail = modelErrors || payload?.detail || payload?.title;
-    const error = new Error(detail || `No fue posible completar la operación (${options.method || "GET"} ${path}: ${response.status}).`);
-    error.statusCode = response.status;
-    throw error;
-  }
 
-  return payload;
+    return payload;
+  } catch (error) {
+    if (timeoutController?.signal.aborted) {
+      const timeoutError = new Error("El servidor tardó demasiado en responder.");
+      timeoutError.code = "REQUEST_TIMEOUT";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  }
 }
 
 async function openAdminDocument(driverProfileId, documentId) {
@@ -6332,6 +6348,32 @@ async function recoverDriverOfferConflict(rideRequestId, error, retryRequest = n
   }
 }
 
+async function recoverTimedOutDriverOffer(rideRequestId) {
+  try {
+    const pendingOffer = await request("/driver/ride-requests/pending-offer", { timeoutMs: 8000 });
+    if (pendingOffer?.id === rideRequestId) {
+      applyPendingDriverOffer(pendingOffer, "Tu oferta sí quedó registrada. Espera a que el pasajero la revise.");
+      return;
+    }
+  } catch { /* Se informa el resultado incierto más abajo. */ }
+
+  try {
+    const currentRide = await request("/driver/ride-requests/current", { timeoutMs: 8000 });
+    if (currentRide?.id === rideRequestId) {
+      state.driverPendingRideOffer = null;
+      state.driverCurrentRideRequest = currentRide;
+      state.driverRideOffers = [];
+      state.selectedDriverOfferId = null;
+      state.driverNav = "requests";
+      renderDashboard();
+      showNotice("El servicio ya está asignado a tu cuenta.");
+      return;
+    }
+  } catch { /* La consulta también puede fallar si el servidor está lento. */ }
+
+  showNotice("El servidor tardó en responder y no pude confirmar la oferta. Revisa tu bandeja antes de volver a enviarla.", true);
+}
+
 async function acceptRideRequest(rideRequestId, source = "button", button = null) {
   stopDriverVoiceAcceptance();
   if (state.driverOfferSubmissionIds.has(rideRequestId)) return;
@@ -6345,7 +6387,8 @@ async function acceptRideRequest(rideRequestId, source = "button", button = null
   }
   const submit = () => request(`/driver/ride-requests/${rideRequestId}/accept`, {
     method: "POST",
-    data: {}
+    data: {},
+    timeoutMs: 25000
   });
   try {
     const submittedOffer = await submit();
@@ -6356,7 +6399,11 @@ async function acceptRideRequest(rideRequestId, source = "button", button = null
     const successMessage = source === "voice"
       ? "Oferta enviada por voz. Espera a que el pasajero elija conductor."
       : "Oferta enviada. El pasajero podrá compararla y elegirla.";
-    if (!await recoverDriverOfferConflict(rideRequestId, error, submit, successMessage)) showNotice(error.message, true);
+    if (error?.code === "REQUEST_TIMEOUT") {
+      await recoverTimedOutDriverOffer(rideRequestId);
+    } else if (!await recoverDriverOfferConflict(rideRequestId, error, submit, successMessage)) {
+      showNotice(error.message, true);
+    }
   } finally {
     state.driverOfferSubmissionIds.delete(rideRequestId);
     if (button?.isConnected) {
@@ -6387,14 +6434,19 @@ async function sendCounterOffer(rideRequestId, priceCop) {
   }
   const submit = () => request(`/driver/ride-requests/${rideRequestId}/counter-offer`, {
     method: "POST",
-    data: { priceCop: normalizedPrice }
+    data: { priceCop: normalizedPrice },
+    timeoutMs: 25000
   });
   try {
     const submittedOffer = await submit();
     applyPendingDriverOffer(submittedOffer, `Contraoferta de ${formatCop(normalizedPrice)} enviada. Espera la decisión del pasajero.`);
   } catch (error) {
     const successMessage = `Contraoferta de ${formatCop(normalizedPrice)} enviada. Espera la decisión del pasajero.`;
-    if (!await recoverDriverOfferConflict(rideRequestId, error, submit, successMessage)) showNotice(error.message, true);
+    if (error?.code === "REQUEST_TIMEOUT") {
+      await recoverTimedOutDriverOffer(rideRequestId);
+    } else if (!await recoverDriverOfferConflict(rideRequestId, error, submit, successMessage)) {
+      showNotice(error.message, true);
+    }
   } finally {
     state.driverOfferSubmissionIds.delete(rideRequestId);
     if (button?.isConnected) {

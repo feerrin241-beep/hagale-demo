@@ -11,6 +11,8 @@ public sealed class SignalRRideRealtimeNotifier(
     IHubContext<RideEventsHub> hubContext,
     ILogger<SignalRRideRealtimeNotifier> logger) : IRideRealtimeNotifier
 {
+    private static readonly TimeSpan PublishTimeout = TimeSpan.FromSeconds(2);
+
     public async Task NotifyRideChangedAsync(
         Guid customerUserId,
         Guid? driverUserId,
@@ -77,11 +79,26 @@ public sealed class SignalRRideRealtimeNotifier(
         IReadOnlyCollection<string> groups,
         CancellationToken cancellationToken)
     {
+        using var publishCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        publishCancellation.CancelAfter(PublishTimeout);
+
         try
         {
-            await hubContext.Clients.Groups(groups).SendAsync(eventName, payload, cancellationToken);
+            await hubContext.Clients.Groups(groups).SendAsync(eventName, payload, publishCancellation.Token);
         }
-        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // La persistencia ya ocurrió; la notificación es un acelerador y
+            // no debe dejar al conductor esperando indefinidamente.
+            logger.LogWarning("La notificación en tiempo real {EventName} excedió {TimeoutSeconds} segundos.",
+                eventName, PublishTimeout.TotalSeconds);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // El cliente cerró la petición. El cambio sigue guardado y el sondeo
+            // periódico permite recuperar el estado al volver a conectarse.
+        }
+        catch (Exception exception)
         {
             // El cambio ya fue guardado en base de datos; el polling existente
             // permite que el cliente se recupere de una falla transitoria.

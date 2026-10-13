@@ -1,9 +1,9 @@
-const CACHE_NAME = "hagale-shell-20261013-06";
+const CACHE_NAME = "hagale-shell-20261013-07";
 const APP_SHELL = [
   "/",
   "/index.html",
-  "/app.css?v=20261013-06",
-  "/app.js?v=20261013-06",
+  "/app.css?v=20261013-07",
+  "/app.js?v=20261013-07",
   "/vendor/leaflet/leaflet.css",
   "/vendor/leaflet/leaflet.js",
   "/vendor/signalr/signalr.min.js",
