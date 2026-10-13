@@ -1770,7 +1770,10 @@ function renderDriverJourneyGuidance(rideRequest) {
 function getSelectedRidePricingRule() {
   const value = app.querySelector("#ride-pricing-rule")?.value;
   const [cityCode, serviceType] = String(value || "").split("|");
-  return cityCode && serviceType ? { cityCode, serviceType } : null;
+  if (!cityCode || !serviceType) return null;
+  return state.pricingRules.find(rule => rule.isActive
+    && rule.cityCode === cityCode
+    && rule.serviceType === serviceType) || { cityCode, serviceType };
 }
 
 function renderCustomerRideQuote() {
@@ -1784,12 +1787,48 @@ function renderCustomerRideQuote() {
   );
   const quote = state.customerRideQuote;
   if (quote) {
-    return `<strong>Ruta real A–B: ${formatCop(quote.recommendedFareCop)}</strong><span>${formatDistance(quote.estimatedDistanceKilometers)} · aprox. ${quote.estimatedDurationMinutes} min por calles · mínimo ${formatCop(quote.minimumFareCop)}.</span>`;
+    const isApproximate = String(quote.route?.provider || "").toLowerCase().includes("aproximada");
+    const title = quote.isLocalEstimate
+      ? "Estimación provisional"
+      : isApproximate ? "Estimación GPS aproximada" : "Ruta real A–B";
+    const routeSource = quote.route?.provider ? ` · ${escapeHtml(quote.route.provider)}` : "";
+    const fallbackNotice = quote.isLocalEstimate
+      ? "<span>La confirmación del servidor de tarifas no respondió; mostramos una estimación con la regla vigente.</span>"
+      : "";
+    return `<strong>${title}: ${formatCop(quote.recommendedFareCop)}</strong><span>${formatDistance(quote.estimatedDistanceKilometers)} · aprox. ${quote.estimatedDurationMinutes} min${routeSource} · mínimo ${formatCop(quote.minimumFareCop)}.</span>${fallbackNotice}`;
   }
   if (pickup && destination) {
     return "<strong>Calculando ruta real…</strong><span>Estamos obteniendo kilómetros y tiempo estimado por las calles.</span>";
   }
   return "<strong>Marca A y B para calcular la ruta real.</strong><span>La tarifa mínima sigue siendo la regla obligatoria mientras no se compartan ambos puntos.</span>";
+}
+
+function calculateLocalRideQuote(pricingRule, route) {
+  const distance = Number(route?.distanceKilometers);
+  const duration = Number(route?.estimatedDurationMinutes);
+  const minimumFare = Number(pricingRule?.minimumFareCop);
+  const baseFare = Number(pricingRule?.baseFareCop);
+  const farePerKilometer = Number(pricingRule?.farePerKilometerCop);
+  const farePerMinute = Number(pricingRule?.farePerMinuteCop);
+  if (![distance, duration, minimumFare, baseFare, farePerKilometer, farePerMinute].every(Number.isFinite)
+    || distance < 0 || duration < 0 || minimumFare <= 0) {
+    return null;
+  }
+
+  const recommendedFare = Math.max(
+    minimumFare,
+    baseFare + Math.ceil(distance) * farePerKilometer + Math.ceil(duration) * farePerMinute
+  );
+  if (!Number.isSafeInteger(Math.round(recommendedFare)) || recommendedFare > Number.MAX_SAFE_INTEGER) return null;
+  return {
+    cityCode: pricingRule.cityCode,
+    serviceType: pricingRule.serviceType,
+    estimatedDistanceKilometers: distance,
+    estimatedDurationMinutes: Math.ceil(duration),
+    minimumFareCop: minimumFare,
+    recommendedFareCop: Math.round(recommendedFare),
+    isLocalEstimate: true
+  };
 }
 
 function updateCustomerRideQuoteUi() {
@@ -1828,8 +1867,9 @@ async function refreshCustomerRideQuote() {
 
   state.customerRideQuote = null;
   updateCustomerRideQuoteUi();
+  let route = null;
   try {
-    const route = await getRoadRoute(pickup, destination);
+    route = await getRoadRoute(pickup, destination);
     if (!route) {
       throw new Error("No se pudo calcular la ruta real.");
     }
@@ -1844,12 +1884,22 @@ async function refreshCustomerRideQuote() {
     state.customerRideQuote = { ...quote, route };
     updateCustomerRideQuoteUi();
     applyDynamicFareRecommendation();
-  } catch {
+  } catch (error) {
     if (version !== state.customerRideQuoteVersion) return;
-    state.customerRideQuote = null;
-    const quoteElement = app.querySelector("#ride-price-reference");
-    if (quoteElement) {
-      quoteElement.innerHTML = "<strong>No se pudo calcular la ruta real ahora.</strong><span>La tarifa mínima continúa siendo obligatoria; revisa la conexión e inténtalo de nuevo.</span>";
+    console.warn("No se pudo confirmar la tarifa con el servidor", error);
+    const mayUseLocalEstimate = !error.statusCode || error.statusCode >= 500;
+    const localQuote = mayUseLocalEstimate ? calculateLocalRideQuote(pricingRule, route) : null;
+    if (localQuote) {
+      state.customerRideQuote = { ...localQuote, route };
+      updateCustomerRideQuoteUi();
+      applyDynamicFareRecommendation();
+      showNotice("El servidor de tarifas no respondió. Se muestra una estimación provisional según la regla vigente.", true);
+    } else {
+      state.customerRideQuote = null;
+      const quoteElement = app.querySelector("#ride-price-reference");
+      if (quoteElement) {
+        quoteElement.innerHTML = `<strong>No pudimos confirmar la tarifa.</strong><span>${escapeHtml(error.message || "Revisa la conexión e inténtalo otra vez.")} El mínimo vigente no es una tarifa calculada.</span>`;
+      }
     }
   }
 }
@@ -2677,65 +2727,11 @@ async function calculateRideFromTypedAddresses() {
   const form = app.querySelector("#ride-location-step-form");
   const button = app.querySelector("[data-geocode-ride]");
   if (!form) return;
-  const data = Object.fromEntries(new FormData(form));
-  const pickupAddress = String(data.pickupAddress || "").trim();
-  const destinationAddress = String(data.destinationAddress || "").trim();
-  const pickupNeighborhood = String(data.pickupNeighborhood || "").trim();
-  const destinationNeighborhood = String(data.destinationNeighborhood || "").trim();
-  const existingPickup = toMapCoordinate(
-    state.pendingPickupLocation?.pickupLatitude,
-    state.pendingPickupLocation?.pickupLongitude
-  );
-  const existingDestination = toMapCoordinate(
-    state.pendingDestinationLocation?.destinationLatitude,
-    state.pendingDestinationLocation?.destinationLongitude
-  );
-  if ((!existingPickup && pickupAddress.length < 5) || (!existingDestination && destinationAddress.length < 5)) {
-    showNotice("Escribe la dirección del punto que falta o selecciónalo con GPS/mapa.", true);
-    return;
-  }
-
-  const cityCode = String(state.customerRideDraft?.pricingRuleKey || "").split("|")[0]
-    || state.pricingRules?.find(rule => rule.isActive)?.cityCode
-    || "BUC";
-  const needsGeocoding = !existingPickup || !existingDestination;
-  if (button) {
-    button.disabled = true;
-    button.textContent = needsGeocoding ? "Ubicando punto(s) pendiente(s)…" : "Calculando tarifa…";
-  }
-  try {
-    setRideAddressFallback("pickup", "map");
-    setRideAddressFallback("destination", "map");
-    const currentForm = app.querySelector("#ride-location-step-form");
-    const currentData = currentForm ? Object.fromEntries(new FormData(currentForm)) : {};
-    saveCustomerRideDraft({
-      pickupAddress: currentData.pickupAddress || pickupAddress,
-      pickupNeighborhood,
-      destinationAddress: currentData.destinationAddress || destinationAddress,
-      destinationNeighborhood
-    });
-    const [pickup, destination] = await Promise.all([
-      existingPickup || searchRideAddressCoordinates(pickupAddress, pickupNeighborhood, cityCode),
-      existingDestination || searchRideAddressCoordinates(destinationAddress, destinationNeighborhood, cityCode)
-    ]);
-    state.pendingPickupLocation = { pickupLatitude: pickup.latitude, pickupLongitude: pickup.longitude };
-    state.pendingDestinationLocation = { destinationLatitude: destination.latitude, destinationLongitude: destination.longitude };
-    state.customerRideStep = "details";
-    sessionStorage.setItem(customerRideStepKey, state.customerRideStep);
-    renderDashboard();
-    void refreshCustomerRideQuote();
-    showNotice(needsGeocoding
-      ? "Puntos A y B listos. Calculando la tarifa sugerida…"
-      : "Usamos directamente los puntos GPS/mapa. Calculando la tarifa sugerida…");
-  } catch (error) {
-    showNotice(error.message || "No pudimos ubicar las dos direcciones. Puedes usar el mapa.", true);
-  } finally {
-    const currentButton = app.querySelector("[data-geocode-ride]");
-    if (currentButton) {
-      currentButton.disabled = false;
-      currentButton.textContent = "Calcular tarifa";
-    }
-  }
+  await continueRideRequestDetails({
+    preventDefault() {},
+    currentTarget: form,
+    submitter: button
+  });
 }
 
 function setRideAddressFallback(target, source) {
@@ -6079,9 +6075,10 @@ async function continueRideRequestDetails(event) {
   }
 
   const button = event.submitter;
+  const isCalculateButton = button?.matches("[data-geocode-ride]") || false;
   if (button) {
     button.disabled = true;
-    button.textContent = "Calculando tarifa…";
+    button.textContent = "Ubicando puntos…";
   }
   try {
     const cityCode = String(state.customerRideDraft?.pricingRuleKey || "").split("|")[0]
@@ -6099,7 +6096,9 @@ async function continueRideRequestDetails(event) {
   } finally {
     if (button?.isConnected) {
       button.disabled = false;
-      button.innerHTML = 'Continuar con tarifa <span aria-hidden="true">→</span>';
+      button.innerHTML = isCalculateButton
+        ? "Calcular tarifa"
+        : 'Continuar con tarifa <span aria-hidden="true">→</span>';
     }
   }
 
