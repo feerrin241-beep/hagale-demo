@@ -56,7 +56,9 @@ public sealed class LocationSearchController(HttpClient httpClient, IMemoryCache
 
             var providers = new[]
             {
-                (Uri: $"{PhotonEndpoint}?lang=es&limit=3&q={Uri.EscapeDataString(searchText)}", Parser: "photon"),
+                // The public Photon instance currently rejects `lang=es`; omitting
+                // it lets the provider return its local OSM names instead.
+                (Uri: $"{PhotonEndpoint}?limit=3&countrycode=CO&q={Uri.EscapeDataString(searchText)}", Parser: "photon"),
                 (Uri: $"{NominatimEndpoint}?format=jsonv2&limit=3&countrycodes=co&addressdetails=0&q={Uri.EscapeDataString(searchText)}", Parser: "nominatim")
             };
 
