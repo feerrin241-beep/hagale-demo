@@ -178,6 +178,9 @@ public sealed class DriverApplicationServiceTests
         public Task<DriverProfile?> GetByIdAsync(Guid driverProfileId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_drivers.SingleOrDefault(item => item.Id == driverProfileId));
 
+        public Task<DriverProfile?> ReloadByIdAsync(Guid driverProfileId, CancellationToken cancellationToken = default) =>
+            GetByIdAsync(driverProfileId, cancellationToken);
+
         public Task<DriverProfile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_drivers.SingleOrDefault(item => item.UserId == userId));
 

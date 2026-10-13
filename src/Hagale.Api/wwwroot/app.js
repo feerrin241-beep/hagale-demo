@@ -47,6 +47,7 @@ const state = {
   application: null,
   rideRequests: [],
   customerDriverOfferBoard: null,
+  customerOfferSelectionIds: new Set(),
   customerOfferCountdownTimer: null,
   driverRideOffers: [],
   driverCurrentRideRequest: null,
@@ -6190,8 +6191,41 @@ async function cancelRideRequest(rideRequestId) {
   } catch (error) { showNotice(error.message, true); }
 }
 
+async function recoverCustomerOfferSelectionConflict(error) {
+  const looksLikeConflict = error?.statusCode === 409 || /(?:solicitud|oferta|propuesta|conductor).*(?:actualiz|cambi|venci|disponible)|(?:actualiz|cambi).*(?:oferta|solicitud)/i.test(error?.message || "");
+  if (!looksLikeConflict) return false;
+
+  try {
+    state.rideRequests = await request("/ride-requests/me");
+    const openRide = getOpenCustomerRideRequest();
+    if (openRide && activeCustomerRideStatuses.has(openRide.status)) {
+      state.customerNav = "tracking";
+      sessionStorage.setItem(customerNavKey, state.customerNav);
+      await refreshCustomerRideTracking();
+      renderDashboard();
+      showNotice("El servicio ya fue asignado. Actualicé el seguimiento.");
+      return true;
+    }
+
+    if (openRide?.status === "Pending") {
+      await refreshCustomerDriverOfferBoard(openRide);
+      renderDashboard();
+      showNotice("Las propuestas se actualizaron. Elige una que siga vigente.", true);
+      return true;
+    }
+
+    state.customerDriverOfferBoard = null;
+    renderDashboard();
+    showNotice("La solicitud ya no está abierta. Actualicé su estado.", true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function selectCustomerDriverOffer(rideRequestId, driverOfferId) {
-  if (!rideRequestId || !driverOfferId) return;
+  if (!rideRequestId || !driverOfferId || state.customerOfferSelectionIds.has(rideRequestId)) return;
+  state.customerOfferSelectionIds.add(rideRequestId);
   try {
     const updated = await request(`/ride-requests/${rideRequestId}/driver-offers/${driverOfferId}/select`, {
       method: "POST",
@@ -6205,7 +6239,13 @@ async function selectCustomerDriverOffer(rideRequestId, driverOfferId) {
     renderDashboard();
     announceCustomerJourneyUpdate(updated, "Accepted");
     showNotice("Conductor elegido. Ya puedes ver el seguimiento de tu servicio.");
-  } catch (error) { showNotice(error.message || "No fue posible elegir esa propuesta.", true); }
+  } catch (error) {
+    if (!await recoverCustomerOfferSelectionConflict(error)) {
+      showNotice(error.message || "No fue posible elegir esa propuesta.", true);
+    }
+  } finally {
+    state.customerOfferSelectionIds.delete(rideRequestId);
+  }
 }
 
 async function restartCustomerDriverOffers(rideRequestId) {

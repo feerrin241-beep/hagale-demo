@@ -15,6 +15,18 @@ public sealed class DriverRepository(HagaleDbContext database) : IDriverReposito
     public Task<DriverProfile?> GetByIdAsync(Guid driverProfileId, CancellationToken cancellationToken = default) =>
         QueryProfiles().SingleOrDefaultAsync(driver => driver.Id == driverProfileId, cancellationToken);
 
+    public async Task<DriverProfile?> ReloadByIdAsync(Guid driverProfileId, CancellationToken cancellationToken = default)
+    {
+        var entry = database.ChangeTracker.Entries<DriverProfile>()
+            .SingleOrDefault(item => item.Entity.Id == driverProfileId);
+        if (entry is not null)
+        {
+            await entry.ReloadAsync(cancellationToken);
+        }
+
+        return await QueryProfiles().SingleOrDefaultAsync(driver => driver.Id == driverProfileId, cancellationToken);
+    }
+
     public Task<DriverProfile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
         QueryProfiles().SingleOrDefaultAsync(driver => driver.UserId == userId, cancellationToken);
 

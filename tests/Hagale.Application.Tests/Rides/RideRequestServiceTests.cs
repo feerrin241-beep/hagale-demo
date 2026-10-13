@@ -280,6 +280,43 @@ public sealed class RideRequestServiceTests
     }
 
     [Fact]
+    public async Task Customer_selection_is_confirmed_if_the_same_offer_was_committed_during_a_retry()
+    {
+        var customerUserId = Guid.NewGuid();
+        var driverUserId = Guid.NewGuid();
+        var driver = CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle);
+        var request = new RideRequest(
+            customerUserId,
+            "Calle 72 # 10-07, Bucaramanga",
+            "Aeropuerto Palonegro, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            8_000,
+            3_500,
+            DateTimeOffset.UtcNow);
+        var rides = new InMemoryRideRequestRepository();
+        rides.Add(request);
+        var drivers = new InMemoryDriverRepository();
+        drivers.Add(driver);
+        var service = new RideRequestService(
+            rides,
+            new InMemoryPricingRuleRepository(),
+            drivers,
+            new ExistingUserDirectory(customerUserId, driverUserId),
+            TimeProvider.System);
+        Assert.True((await service.AcceptAsync(driverUserId, request.Id)).IsSuccess);
+        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
+        var offerId = Assert.Single(board!.Offers).Id;
+        rides.BeforeNextSaveFailure = _ => { };
+
+        var selected = await service.SelectDriverOfferAsync(customerUserId, request.Id, offerId);
+
+        Assert.True(selected.IsSuccess);
+        Assert.Equal(RideRequestStatus.Accepted, selected.Value!.Status);
+        Assert.Equal(driver.Id, request.AssignedDriverProfileId);
+    }
+
+    [Fact]
     public async Task Selecting_and_advancing_a_service_notifies_only_its_participants()
     {
         var customerUserId = Guid.NewGuid();
@@ -917,6 +954,8 @@ public sealed class RideRequestServiceTests
         public void AddDocument(DriverDocument document) { }
         public Task<DriverProfile?> GetByIdAsync(Guid driverProfileId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_drivers.SingleOrDefault(driver => driver.Id == driverProfileId));
+        public Task<DriverProfile?> ReloadByIdAsync(Guid driverProfileId, CancellationToken cancellationToken = default) =>
+            GetByIdAsync(driverProfileId, cancellationToken);
         public Task<DriverProfile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_drivers.SingleOrDefault(driver => driver.UserId == userId));
         public Task<DriverProfilePage> ListAsync(DriverStatus? status, int skip, int take, CancellationToken cancellationToken = default) =>

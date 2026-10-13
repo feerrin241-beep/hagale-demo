@@ -364,7 +364,75 @@ public sealed class RideRequestService(
         }
         catch (ConcurrentUpdateException)
         {
-            return ApplicationResult<RideRequestDto>.Failure("Otro cambio actualizó las ofertas. Actualiza la pantalla y vuelve a elegir.");
+            return await RecoverConcurrentDriverOfferSelectionAsync(
+                customerUserId,
+                rideRequestId,
+                driverOfferId,
+                driver!.Id,
+                cancellationToken);
+        }
+        catch (DomainRuleViolationException exception)
+        {
+            return ApplicationResult<RideRequestDto>.Failure(exception.Message);
+        }
+    }
+
+    private async Task<ApplicationResult<RideRequestDto>> RecoverConcurrentDriverOfferSelectionAsync(
+        Guid customerUserId,
+        Guid rideRequestId,
+        Guid driverOfferId,
+        Guid driverProfileId,
+        CancellationToken cancellationToken)
+    {
+        var request = await rideRequestRepository.ReloadByIdAsync(rideRequestId, cancellationToken);
+        if (request is null || request.CustomerUserId != customerUserId)
+        {
+            return ApplicationResult<RideRequestDto>.Failure("La solicitud ya no está disponible.");
+        }
+
+        if (request.Status == RideRequestStatus.Accepted && request.AssignedDriverProfileId == driverProfileId)
+        {
+            // A repeated selection after the first one committed is already complete.
+            return ApplicationResult<RideRequestDto>.Success(Map(request));
+        }
+
+        if (request.Status != RideRequestStatus.Pending)
+        {
+            return ApplicationResult<RideRequestDto>.Failure(
+                "La solicitud ya fue asignada o cerrada. Actualicé el estado del servicio.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var offer = request.DriverOffers.SingleOrDefault(item =>
+            item.Id == driverOfferId &&
+            item.SearchRound == request.OfferSearchRound &&
+            item.IsPendingAt(now));
+        if (offer is null || !request.IsOfferWindowOpenAt(now))
+        {
+            return ApplicationResult<RideRequestDto>.Failure(
+                "Esa propuesta ya venció o cambió de ronda. Actualiza la lista y elige una oferta vigente.");
+        }
+
+        var driver = await driverRepository.ReloadByIdAsync(driverProfileId, cancellationToken);
+        if (!CanReceiveRequests(driver) || !CanServe(driver!, request) ||
+            await rideRequestRepository.GetActiveByDriverProfileIdAsync(driverProfileId, cancellationToken) is not null)
+        {
+            return ApplicationResult<RideRequestDto>.Failure(
+                "Ese conductor ya no está disponible. Actualicé las propuestas para que elijas otra.");
+        }
+
+        try
+        {
+            request.SelectDriverOffer(driverOfferId, now);
+            driver!.SetAvailability(DriverAvailabilityStatus.Busy);
+            await rideRequestRepository.SaveChangesAsync(cancellationToken);
+            await NotifyRideChangedAsync(request, driver, dispatchChanged: true, cancellationToken);
+            return ApplicationResult<RideRequestDto>.Success(Map(request));
+        }
+        catch (ConcurrentUpdateException)
+        {
+            return ApplicationResult<RideRequestDto>.Failure(
+                "Las propuestas cambiaron otra vez. Actualiza la lista; si ya asignaron el servicio, verás el seguimiento.");
         }
         catch (DomainRuleViolationException exception)
         {
