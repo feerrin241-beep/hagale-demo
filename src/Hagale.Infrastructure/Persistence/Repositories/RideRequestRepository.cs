@@ -4,10 +4,13 @@ using Hagale.Domain.Rides;
 using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace Hagale.Infrastructure.Persistence.Repositories;
 
-public sealed class RideRequestRepository(HagaleDbContext database) : IRideRequestRepository
+public sealed class RideRequestRepository(
+    HagaleDbContext database,
+    ILogger<RideRequestRepository> logger) : IRideRequestRepository
 {
     public void Add(RideRequest rideRequest) => database.RideRequests.Add(rideRequest);
 
@@ -83,10 +86,10 @@ public sealed class RideRequestRepository(HagaleDbContext database) : IRideReque
                     await transaction.DisposeAsync();
                 }
 
-                return new RideRequestWriteLock(database, null, null);
+                return new RideRequestWriteLock(database, logger, null, null);
             }
 
-            return new RideRequestWriteLock(database, request, transaction);
+            return new RideRequestWriteLock(database, logger, request, transaction);
         }
         catch
         {
@@ -145,8 +148,22 @@ public sealed class RideRequestRepository(HagaleDbContext database) : IRideReque
         }
         catch (DbUpdateConcurrencyException exception)
         {
+            LogConcurrencyFailure(exception, rideRequestId: null);
             throw new ConcurrentUpdateException("La solicitud fue actualizada por otra operación.", exception);
         }
+    }
+
+    private void LogConcurrencyFailure(DbUpdateConcurrencyException exception, Guid? rideRequestId)
+    {
+        var entries = string.Join(
+            ", ",
+            exception.Entries.Select(entry => $"{entry.Metadata.ClrType.Name}:{entry.State}"));
+        logger.LogError(
+            exception,
+            "EF concurrency conflict while saving ride data. RequestId={RequestId}; Entries={Entries}; Provider={Provider}",
+            rideRequestId,
+            entries,
+            database.Database.ProviderName);
     }
 
     private void DetachAggregate(Guid rideRequestId)
@@ -168,6 +185,7 @@ public sealed class RideRequestRepository(HagaleDbContext database) : IRideReque
 
     private sealed class RideRequestWriteLock(
         HagaleDbContext database,
+        ILogger<RideRequestRepository> logger,
         RideRequest? request,
         IDbContextTransaction? transaction) : IRideRequestWriteLock
     {
@@ -190,6 +208,15 @@ public sealed class RideRequestRepository(HagaleDbContext database) : IRideReque
             }
             catch (DbUpdateConcurrencyException exception)
             {
+                var entries = string.Join(
+                    ", ",
+                    exception.Entries.Select(entry => $"{entry.Metadata.ClrType.Name}:{entry.State}"));
+                logger.LogError(
+                    exception,
+                    "EF concurrency conflict while saving locked ride request. RequestId={RequestId}; Entries={Entries}; Provider={Provider}",
+                    Request?.Id,
+                    entries,
+                    database.Database.ProviderName);
                 await RollbackAndDisposeAsync();
                 throw new ConcurrentUpdateException("La solicitud fue actualizada por otra operación.", exception);
             }
