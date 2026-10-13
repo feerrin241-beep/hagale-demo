@@ -3169,8 +3169,6 @@ function renderWelcome() {
         <div class="welcome-actions" data-reveal>
           <button class="button button-primary" type="button" data-open-auth="login">Ingresar</button>
           <button class="button welcome-register-button" type="button" data-open-auth="register">Regístrate</button>
-          <button class="button button-secondary welcome-guest-button" type="button" data-demo-guest>Entrar como visitante</button>
-          ${renderInstallAppButton("welcome-install-button")}
         </div>
       </section>
 
@@ -3208,8 +3206,6 @@ function renderWelcome() {
   app.querySelectorAll("[data-auth-mode]").forEach(button => {
     button.addEventListener("click", () => setAuthForm(button.dataset.authMode));
   });
-  bindInstallAppEvents();
-  bindGuestAccessButtons();
   activateRevealAnimations();
 }
 
@@ -3387,14 +3383,6 @@ function bindAuthUtilities() {
   });
 }
 
-function bindGuestAccessButtons() {
-  document.querySelectorAll("[data-demo-guest]").forEach(button => {
-    if (button.dataset.guestBound === "true") return;
-    button.dataset.guestBound = "true";
-    button.addEventListener("click", signInAsDemoGuest);
-  });
-}
-
 function setAuthForm(mode, options = {}) {
   app.querySelectorAll("[data-auth-mode]").forEach(button => {
     button.setAttribute("aria-selected", String(button.dataset.authMode === mode));
@@ -3437,9 +3425,8 @@ function setAuthForm(mode, options = {}) {
   if (mode === "login") {
     container.innerHTML = `
       <h2>Bienvenido de nuevo</h2>
-      <p class="muted small-text">Ingresa con tu cuenta o prueba la plataforma como visitante.</p>
+      <p class="muted small-text">Ingresa con tu cuenta para continuar.</p>
       ${renderGoogleAuthSection("login")}
-      <button class="button button-secondary demo-guest-inline" type="button" data-demo-guest>Entrar como visitante</button>
       <form id="login-form">
         <div class="field"><label for="login-email">Correo</label><input id="login-email" name="email" type="email" autocomplete="email" required></div>
         <div class="field">
@@ -3454,7 +3441,6 @@ function setAuthForm(mode, options = {}) {
       </form>`;
     document.querySelector("#login-form").addEventListener("submit", handleLogin);
     bindAuthUtilities();
-    bindGuestAccessButtons();
     bindGoogleAuthSection("login");
     return;
   }
@@ -3481,7 +3467,6 @@ function setAuthForm(mode, options = {}) {
     </form>`;
   document.querySelector("#register-form").addEventListener("submit", handleRegister);
   bindAuthUtilities();
-  bindGuestAccessButtons();
   bindGoogleAuthSection("register");
 }
 
@@ -3489,17 +3474,6 @@ async function handleLogin(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   await authenticate("/auth/login", { email: form.get("email"), password: form.get("password") });
-}
-
-async function signInAsDemoGuest(event) {
-  event?.preventDefault();
-  const button = event?.currentTarget;
-  if (button) button.disabled = true;
-  try {
-    await authenticate("/auth/demo-guest", {});
-  } finally {
-    if (button?.isConnected) button.disabled = false;
-  }
 }
 
 function getPasswordValidationErrors(password) {

@@ -4751,17 +4751,6 @@ body.welcome-view {
   border-color: #111218;
 }
 
-.welcome-actions .welcome-install-button {
-  border-color: rgba(255,216,0,.65);
-  color: #ffd800;
-  background: rgba(255,216,0,.08);
-}
-
-.welcome-actions .welcome-install-button:hover {
-  color: #050506;
-  background: #ffd800;
-}
-
 .mode-hero-driver .driver-hero-install,
 .mode-hero-driver .driver-hero-install:hover {
   color: #111218;
@@ -5907,28 +5896,6 @@ body.welcome-view {
     aspect-ratio: 9 / 16;
     padding: clamp(.85rem, 2.5svh, 1.2rem);
   }
-}
-
-/* Ajustes operativos de demo: lectura fuerte, menos texto y acceso rápido. */
-.welcome-guest-button,
-.demo-guest-inline {
-  border: 2px solid #ffd800;
-  color: #ffd800;
-  background: #111218;
-  font-weight: 1000;
-}
-
-.welcome-guest-button:hover,
-.demo-guest-inline:hover {
-  color: #111218;
-  background: #ffd800;
-}
-
-.welcome-auth-card .demo-guest-inline {
-  width: 100%;
-  min-height: 2.9rem;
-  margin-bottom: .65rem;
-  border-radius: .82rem;
 }
 
 #auth-form {
