@@ -7217,12 +7217,21 @@ body.visual-day .driver-shell { background: #fff; }
   .driver-request-sheet,
   .driver-active-card,
   .driver-map-card { margin-inline: 0 !important; border-radius: 0 !important; }
-  .driver-request-sheet { margin-left: 0 !important; margin-right: 0 !important; padding-inline: .72rem !important; }
+  .driver-workspace { padding-bottom: calc(6.25rem + env(safe-area-inset-bottom)) !important; }
+  .driver-request-inbox { overflow: visible !important; }
+  .driver-request-sheet {
+    margin: .65rem 0 .9rem !important;
+    padding: .8rem .72rem 1rem !important;
+    overflow: visible !important;
+    scroll-margin-top: .6rem;
+    scroll-margin-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  }
   .driver-request-row { padding-inline: .72rem !important; }
   .driver-offer-action-stack { gap: .62rem; }
   .driver-offer-action-stack .driver-accept-large { min-height: 4.45rem !important; font-size: 1.15rem !important; }
-  .driver-counter-sheet > div { grid-template-columns: minmax(0, 1fr) !important; }
+  .driver-counter-sheet > div { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
   .driver-counter-sheet button { width: 100%; min-height: 3.4rem; }
+  .driver-counter-options { gap: .55rem; }
 }
 /* Texto principal del selector: grande y legible sin desbordar en 9:16. */
 .mode-switch-tab {
@@ -7558,9 +7567,10 @@ body.account-splash-active { overflow: hidden !important; }
 .panel-back-button:focus-visible { color: #050506 !important; background: #ffd800 !important; }
 .customer-ride-stage > .panel-back-row { margin-top: .55rem; }
 @media (max-width: 520px) {
-  .driver-counter-options { grid-template-columns: 1fr; }
-  .driver-quick-counter-offer { min-height: 3.1rem; grid-template-columns: auto 1fr; align-items: center; text-align: left; padding-inline: .75rem; }
-  .driver-quick-counter-offer strong { text-align: right; }
+  .driver-counter-options { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .32rem; }
+  .driver-quick-counter-offer { min-height: 3.1rem; grid-template-columns: 1fr; align-items: center; text-align: center; padding: .35rem .12rem; }
+  .driver-quick-counter-offer span { font-size: .62rem; }
+  .driver-quick-counter-offer strong { font-size: clamp(.7rem, 3vw, .9rem); text-align: center; white-space: nowrap; }
 }
 
 /* Centro de diseño: el selector se lee como un control real de disponibilidad. */
