@@ -1499,9 +1499,6 @@ async function getRoadRoute(origin, destination) {
     .catch(error => {
       console.warn("No se pudo obtener la ruta real", error);
       const fallback = estimateDirectRoute(origin, destination);
-      if (fallback) {
-        showNotice("Ruta por calles no disponible; usamos una distancia GPS aproximada.");
-      }
       return fallback;
     })
     .finally(() => state.roadRoutePending.delete(key));
@@ -1551,6 +1548,11 @@ function drawRoadRouteSegments(leaflet, map, segments) {
 function replaceRouteBadge(container, text) {
   const badge = container?.querySelector(".driver-map-route-badge");
   if (badge && text) badge.textContent = text;
+}
+
+function routeBadgeLabel(route, realRouteLabel, approximateRouteLabel) {
+  const isApproximate = String(route?.provider || "").toLowerCase().includes("aproximada");
+  return isApproximate ? approximateRouteLabel : realRouteLabel;
 }
 
 function drawReferenceRoute(leaflet, map, points, { includeDriver = true } = {}) {
@@ -2137,7 +2139,7 @@ function mountCustomerTrackingMap() {
           color: "#111218",
           casingColor: "#ffd800"
         }]);
-        replaceRouteBadge(container, `Ruta real A → B · ${formatDistance(route.distanceKilometers)} · ${route.estimatedDurationMinutes} min`);
+        replaceRouteBadge(container, `${routeBadgeLabel(route, "Ruta real A → B", "GPS aproximado A → B")} · ${formatDistance(route.distanceKilometers)} · ${route.estimatedDurationMinutes} min`);
       });
     }
     window.setTimeout(() => map.invalidateSize(), 0);
@@ -2666,7 +2668,7 @@ function mountCustomerRideMap() {
           color: "#111218",
           casingColor: "#ffd800"
         }]);
-        replaceRouteBadge(container, `A → B · ruta real · ${formatDistance(route.distanceKilometers)} · ${route.estimatedDurationMinutes} min`);
+        replaceRouteBadge(container, `A → B · ${routeBadgeLabel(route, "ruta real", "GPS aproximado")} · ${formatDistance(route.distanceKilometers)} · ${route.estimatedDurationMinutes} min`);
       });
     }
     window.setTimeout(() => map.invalidateSize(), 0);
@@ -2907,7 +2909,8 @@ function mountDriverMap() {
           mapState.routeLayerGroup = drawRoadRouteSegments(leaflet, map, usableSegments);
           mapState.roadRouteActive = true;
           const totalMinutes = usableSegments.reduce((sum, segment) => sum + Number(segment.route.estimatedDurationMinutes || 0), 0);
-          replaceRouteBadge(container, `Ruta real · ${totalMinutes} min estimados · usa navegación para giros`);
+          const hasApproximateRoute = routeSegments.some(segment => String(segment.route?.provider || "").toLowerCase().includes("aproximada"));
+          replaceRouteBadge(container, `${hasApproximateRoute ? "GPS aproximado" : "Ruta real"} · ${totalMinutes} min estimados · usa navegación para giros`);
         });
       }
     }

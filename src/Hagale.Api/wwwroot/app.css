@@ -7556,8 +7556,8 @@ body.account-splash-active { overflow: hidden !important; }
   border: 2px solid #111218 !important;
   font-weight: 900;
 }
-.driver-quick-counter-offer span { font-size: .72rem; }
-.driver-quick-counter-offer strong { font-size: 1.05rem; line-height: 1.05; }
+.driver-quick-counter-offer span { font-size: .76rem; }
+.driver-quick-counter-offer strong { font-size: 1.22rem; line-height: 1.05; font-weight: 1000; }
 .driver-quick-counter-offer:hover,
 .driver-quick-counter-offer:focus-visible { background: #ffec72 !important; transform: translateY(-.08rem); }
 .panel-back-row { display: flex; justify-content: flex-start; width: 100%; margin: 0 0 .55rem; }
@@ -7568,9 +7568,9 @@ body.account-splash-active { overflow: hidden !important; }
 .customer-ride-stage > .panel-back-row { margin-top: .55rem; }
 @media (max-width: 520px) {
   .driver-counter-options { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .32rem; }
-  .driver-quick-counter-offer { min-height: 3.1rem; grid-template-columns: 1fr; align-items: center; text-align: center; padding: .35rem .12rem; }
+  .driver-quick-counter-offer { min-height: 3.45rem; grid-template-columns: 1fr; align-items: center; text-align: center; padding: .35rem .12rem; }
   .driver-quick-counter-offer span { font-size: .62rem; }
-  .driver-quick-counter-offer strong { font-size: clamp(.7rem, 3vw, .9rem); text-align: center; white-space: nowrap; }
+  .driver-quick-counter-offer strong { font-size: clamp(1rem, 5.2vw, 1.22rem); text-align: center; white-space: nowrap; letter-spacing: -.035em; }
 }
 
 /* Centro de diseño: el selector se lee como un control real de disponibilidad. */
