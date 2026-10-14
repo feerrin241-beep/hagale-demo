@@ -1169,6 +1169,7 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
   state.driverCompletedRideRequests = completedRequests;
   state.application = application;
   state.driverActivitySummary = activitySummary;
+  void resumeGrantedDriverLocationTracking();
   if (state.selectedDriverOfferId && !offers.some(offer => offer.id === state.selectedDriverOfferId)) {
     state.selectedDriverOfferId = null;
   }
@@ -1630,9 +1631,9 @@ function renderDriverMap(driver) {
   const help = !isReadyForDispatch
     ? "Para compartir tu ubicación en el despacho, primero pulsa “Activar disponibilidad”."
     : hasDriverPosition
-    ? state.driverCurrentRideRequest
-      ? "Tu moto se actualiza al compartir GPS. La ruta dibujada es referencial; usa Abrir navegación para calles y giros reales."
-      : "Tu moto aparece en el mapa. Las recogidas con ubicación compartida se mostrarán como puntos A."
+      ? state.driverCurrentRideRequest
+      ? "Tu GPS se comparte durante el servicio. La ruta dibujada es referencial; usa Abrir navegación para calles y giros reales."
+      : "Tu GPS se comparte mientras estés LIBRE. La ubicación exacta solo se muestra al cliente del servicio asignado."
     : "Activa el GPS para ver tu moto y ordenar las solicitudes por cercanía.";
 
   return `
@@ -1654,7 +1655,7 @@ function renderDriverMap(driver) {
         <button class="button button-quiet small" type="button" data-diagnose-gps>Comprobar GPS</button>
         <span data-gps-diagnostic-status>Comprueba el permiso solo si tu punto no aparece.</span>
       </div>
-      <p class="map-privacy-note">El seguimiento comienza únicamente cuando tú pulsas “Activar GPS”. Al desconectarte, se detiene y la ubicación se elimina del despacho.</p>
+      <p class="map-privacy-note">Al ponerte LIBRE se activa la ubicación en vivo para ordenar solicitudes cercanas. La ubicación exacta solo se comparte con el cliente de un viaje asignado y se detiene al desconectarte.</p>
     </article>`;
 }
 
@@ -2074,7 +2075,7 @@ function getCustomerTrackingMapPoints(rideRequest, tracking) {
   );
   const driver = toMapCoordinate(tracking?.driverLatitude, tracking?.driverLongitude);
   return [
-    ...(driver ? [{ ...driver, kind: "driver", title: "Conductor · última ubicación compartida" }] : []),
+    ...(driver ? [{ ...driver, kind: "driver", title: "Conductor · GPS compartido en vivo" }] : []),
     ...(pickup ? [{ ...pickup, kind: "pickup", title: "A · Recogida" }] : []),
     ...(destination ? [{ ...destination, kind: "destination", title: "B · Destino" }] : [])
   ];
@@ -2102,6 +2103,17 @@ function mountCustomerTrackingMap() {
   const rideRequest = getActiveCustomerRide();
   if (!container || !rideRequest) return;
 
+  const existingMap = state.customerTrackingMap;
+  if (existingMap?.rideRequestId === rideRequest.id && existingMap.map) {
+    syncCustomerTrackingMapMarkers(existingMap, rideRequest, state.customerRideTracking, container);
+    window.setTimeout(() => existingMap.map.invalidateSize(), 0);
+    return;
+  }
+  if (existingMap?.rideRequestId === rideRequest.id && existingMap.fallback) {
+    renderCustomerTrackingMapFallback(container, rideRequest, state.customerRideTracking);
+    return;
+  }
+
   destroyCustomerTrackingMap();
   container.innerHTML = "";
   const tracking = state.customerRideTracking;
@@ -2124,10 +2136,11 @@ function mountCustomerTrackingMap() {
     }).addTo(map);
 
     const bounds = [];
+    const markers = {};
     points.forEach(point => {
       const latLng = [point.latitude, point.longitude];
       bounds.push(latLng);
-      leaflet.marker(latLng, {
+      markers[point.kind] = leaflet.marker(latLng, {
         icon: createDriverMapIcon(leaflet, point.kind),
         keyboard: true,
         title: point.title
@@ -2147,7 +2160,7 @@ function mountCustomerTrackingMap() {
       map.setView(getRideMapFallbackCenter(rideRequest.operatingCityCode), 13);
     }
 
-    const mapState = { map, rideRequestId: rideRequest.id, routeLayerGroup };
+    const mapState = { map, rideRequestId: rideRequest.id, routeLayerGroup, markers };
     state.customerTrackingMap = mapState;
     const pickupPoint = points.find(point => point.kind === "pickup");
     const destinationPoint = points.find(point => point.kind === "destination");
@@ -2169,11 +2182,51 @@ function mountCustomerTrackingMap() {
   }
 }
 
+function syncCustomerTrackingMapMarkers(mapState, rideRequest, tracking, container) {
+  if (!mapState?.map || !window.L) return;
+  const points = getCustomerTrackingMapPoints(rideRequest, tracking);
+  const currentKinds = new Set(points.map(point => point.kind));
+  for (const [kind, marker] of Object.entries(mapState.markers || {})) {
+    if (!currentKinds.has(kind)) {
+      marker.remove();
+      delete mapState.markers[kind];
+    }
+  }
+
+  points.forEach(point => {
+    const latLng = [point.latitude, point.longitude];
+    const marker = mapState.markers[point.kind];
+    if (marker) {
+      marker.setLatLng(latLng);
+      if (point.kind === "driver" && !mapState.map.getBounds().contains(latLng)) {
+        mapState.map.panTo(latLng, { animate: true, duration: .5 });
+      }
+      return;
+    }
+
+    mapState.markers[point.kind] = window.L.marker(latLng, {
+      icon: createDriverMapIcon(window.L, point.kind),
+      keyboard: true,
+      title: point.title
+    }).addTo(mapState.map).bindTooltip(point.title, { direction: "top", offset: [0, -15] });
+    if (point.kind === "driver") {
+      const pickup = points.find(item => item.kind === "pickup");
+      const destination = points.find(item => item.kind === "destination");
+      const bounds = [point, pickup, destination]
+        .filter(Boolean)
+        .map(item => [item.latitude, item.longitude]);
+      if (bounds.length > 1) mapState.map.fitBounds(bounds, { padding: [36, 36], maxZoom: 16 });
+      else mapState.map.setView(latLng, 15);
+      replaceRouteBadge(container, "GPS del conductor en vivo");
+    }
+  });
+}
+
 function customerTrackingMessage(rideRequest, tracking) {
   const status = tracking?.status || rideRequest.status;
   const hasDriverLocation = Boolean(toMapCoordinate(tracking?.driverLatitude, tracking?.driverLongitude));
   const locationTime = tracking?.driverLocationUpdatedAtUtc
-    ? `Última ubicación compartida: ${formatDateTime(tracking.driverLocationUpdatedAtUtc)}.`
+    ? `GPS actualizado: ${formatDateTime(tracking.driverLocationUpdatedAtUtc)}.`
     : "";
   if (status === "InProgress") {
     return hasDriverLocation
@@ -2609,7 +2662,7 @@ function syncCustomerTrackingPolling(isCustomerMode) {
   // another panel (including Driver mode), but only announce updates while the
   // customer panel is actually visible.
   if (!openRide || (!isCustomerMode && openRide.status !== "Pending")) return;
-  const pollingInterval = openRide.status === "Pending" ? 5_000 : 15_000;
+    const pollingInterval = openRide.status === "Pending" ? 5_000 : 10_000;
 
   state.customerTrackingPollingTimer = window.setInterval(() => {
     void refreshCustomerRideStatus({ notifyJourneyChange: isCustomerMode }).catch(() => {
@@ -3005,6 +3058,35 @@ function stopDriverLocationTracking() {
   state.driverLocationUsesHighAccuracy = true;
 }
 
+function hasActiveDriverJourney() {
+  return ["Accepted", "DriverEnRoute", "DriverArrived", "InProgress"]
+    .includes(state.driverCurrentRideRequest?.status);
+}
+
+async function resumeGrantedDriverLocationTracking() {
+  if (!["Available", "Busy"].includes(state.application?.availabilityStatus)) {
+    stopDriverLocationTracking();
+    return;
+  }
+
+  const highAccuracy = hasActiveDriverJourney();
+  if (state.driverLocationWatchId !== null && state.driverLocationUsesHighAccuracy !== highAccuracy) {
+    stopDriverLocationTracking();
+  }
+  if (state.driverLocationWatchId !== null || !navigator.permissions?.query) return;
+
+  try {
+    const permission = await navigator.permissions.query({ name: "geolocation" });
+    if (permission.state === "granted"
+      && ["Available", "Busy"].includes(state.application?.availabilityStatus)) {
+      startDriverLocationTracking({ highAccuracy });
+    }
+  } catch {
+    // Algunos navegadores no permiten consultar el permiso; el conductor
+    // puede iniciar la compartición con el botón explícito de GPS.
+  }
+}
+
 function applyLocalDriverLocation(location) {
   state.application = {
     ...state.application,
@@ -3022,12 +3104,15 @@ async function saveDriverLocation(location) {
   });
 }
 
-function startDriverLocationTracking({ highAccuracy = true } = {}) {
+function startDriverLocationTracking({ highAccuracy = hasActiveDriverJourney() } = {}) {
   if (!navigator.geolocation) {
     showNotice("Este navegador no ofrece GPS. Abre HÁGALE en Chrome, Firefox o Safari y permite la ubicación.", true);
     return;
   }
-  if (state.driverLocationWatchId !== null) return;
+  if (state.driverLocationWatchId !== null) {
+    if (state.driverLocationUsesHighAccuracy === highAccuracy) return;
+    stopDriverLocationTracking();
+  }
 
   state.locationTrackingErrorShown = false;
   state.driverLocationUsesHighAccuracy = highAccuracy;
@@ -3046,7 +3131,8 @@ function startDriverLocationTracking({ highAccuracy = true } = {}) {
       applyLocalDriverLocation(location);
 
       const now = Date.now();
-      if (state.isSendingDriverLocation || now - state.lastDriverLocationSentAt < 15_000) return;
+      const minimumUpdateInterval = hasActiveDriverJourney() ? 5_000 : 15_000;
+      if (state.isSendingDriverLocation || now - state.lastDriverLocationSentAt < minimumUpdateInterval) return;
 
       state.lastDriverLocationSentAt = now;
       state.isSendingDriverLocation = true;
@@ -3071,7 +3157,7 @@ function startDriverLocationTracking({ highAccuracy = true } = {}) {
       if (error.code === 1) stopDriverLocationTracking();
       showNotice(getDeviceLocationErrorMessage(error), true);
     },
-    { enableHighAccuracy: highAccuracy, maximumAge: highAccuracy ? 5_000 : 30_000, timeout: highAccuracy ? 15_000 : 20_000 }
+    { enableHighAccuracy: highAccuracy, maximumAge: highAccuracy ? 2_000 : 15_000, timeout: highAccuracy ? 15_000 : 20_000 }
   );
 }
 
@@ -3728,6 +3814,7 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
       sessionStorage.setItem(accountSplashSessionKey, "true");
     }
     renderDashboard();
+    void resumeGrantedDriverLocationTracking();
   } catch (error) {
     showNotice(error.message, true);
     renderWelcome();
@@ -5432,9 +5519,9 @@ async function updateDispatchLocation() {
     await saveDriverLocation(location);
     state.lastDriverLocationSentAt = Date.now();
     await refreshDriverDispatch();
-    startDriverLocationTracking();
+    startDriverLocationTracking({ highAccuracy: hasActiveDriverJourney() });
     renderDashboard();
-    showNotice("Ubicación actualizada. Ordenamos las solicitudes por cercanía.");
+    showNotice("GPS activado y compartiéndose en vivo. Ordenamos las solicitudes por cercanía.");
   } catch (error) {
     showNotice(error.message, true);
   } finally {
@@ -6553,8 +6640,42 @@ async function updateRideJourney(action, rideRequestId) {
 
 async function changeAvailability(availabilityStatus) {
   try {
-    state.application = await request("/driver-application/availability", { method: "PATCH", data: { availabilityStatus } });
+    let location = null;
     if (availabilityStatus === "Available") {
+      try {
+        // Solicitar el permiso primero conserva el gesto explícito del botón LIBRE.
+        const coords = await readDeviceLocation();
+        location = {
+          latitude: Number(coords.latitude.toFixed(6)),
+          longitude: Number(coords.longitude.toFixed(6))
+        };
+      } catch (locationError) {
+        showNotice(`No te dejamos LIBRE sin compartir GPS. ${locationError.message}`, true);
+        return;
+      }
+    }
+
+    state.application = await request("/driver-application/availability", { method: "PATCH", data: { availabilityStatus } });
+    if (availabilityStatus === "Available" && location) {
+      try {
+        await saveDriverLocation(location);
+        applyLocalDriverLocation(location);
+        state.lastDriverLocationSentAt = Date.now();
+        startDriverLocationTracking({ highAccuracy: hasActiveDriverJourney() });
+      } catch (locationError) {
+        stopDriverLocationTracking();
+        try {
+          state.application = await request("/driver-application/availability", {
+            method: "PATCH",
+            data: { availabilityStatus: "Offline" }
+          });
+        } catch {
+          state.application = { ...state.application, availabilityStatus: "Offline" };
+        }
+        renderDashboard();
+        showNotice(`No te dejamos LIBRE sin compartir GPS. ${locationError.message}`, true);
+        return;
+      }
       await refreshDriverDispatch();
     } else {
       stopDriverVoiceAcceptance();
@@ -6563,7 +6684,9 @@ async function changeAvailability(availabilityStatus) {
       state.driverCurrentRideRequest = null;
     }
     renderDashboard();
-    showNotice(availabilityStatus === "Available" ? "Estás LIBRE y recibirás solicitudes cercanas." : "Quedaste OCUPADO y no recibirás nuevas solicitudes.");
+    showNotice(availabilityStatus === "Available"
+      ? "Estás LIBRE. GPS en vivo activado; el mapa del cliente se actualizará cuando elija tu oferta."
+      : "Quedaste OCUPADO y no recibirás nuevas solicitudes.");
   } catch (error) { showNotice(error.message, true); }
 }
 
