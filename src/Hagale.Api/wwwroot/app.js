@@ -1346,7 +1346,7 @@ function rideMapCoordinate(rideRequest, place) {
   return toMapCoordinate(rideRequest?.destinationLatitude, rideRequest?.destinationLongitude);
 }
 
-function buildExternalNavigationUrl(rideRequest, place) {
+function buildGoogleMapsNavigationUrl(rideRequest, place) {
   const destination = rideMapCoordinate(rideRequest, place);
   if (!destination) return null;
 
@@ -1366,14 +1366,37 @@ function buildExternalNavigationUrl(rideRequest, place) {
   return `https://www.google.com/maps/dir/?${parameters.toString()}`;
 }
 
+function buildWazeNavigationUrl(rideRequest, place) {
+  const destination = rideMapCoordinate(rideRequest, place);
+  if (!destination) return null;
+
+  const parameters = new URLSearchParams({
+    ll: `${destination.latitude},${destination.longitude}`,
+    navigate: "yes",
+    zoom: "17",
+    utm_source: "hagale"
+  });
+
+  return `https://waze.com/ul?${parameters.toString()}`;
+}
+
 function renderDriverNavigationAction(rideRequest, place) {
   const targetLabel = place === "destination" ? "destino (B)" : "recogida (A)";
-  const navigationUrl = buildExternalNavigationUrl(rideRequest, place);
-  if (!navigationUrl) {
+  const googleMapsUrl = buildGoogleMapsNavigationUrl(rideRequest, place);
+  const wazeUrl = buildWazeNavigationUrl(rideRequest, place);
+  if (!googleMapsUrl || !wazeUrl) {
     return `<p class="driver-navigation-note">Comparte el punto ${place === "destination" ? "B" : "A"} para habilitar la navegación a ${targetLabel}.</p>`;
   }
 
-  return `<a class="button button-secondary driver-navigation-link" href="${escapeHtml(navigationUrl)}" target="_blank" rel="noopener noreferrer">Abrir navegación a ${targetLabel}</a>`;
+  const heading = place === "destination" ? "Navegar al destino B" : "Navegar a recogida A";
+  return `
+    <section class="driver-navigation-actions" aria-label="Navegación externa hacia ${targetLabel}">
+      <div class="driver-navigation-heading"><strong>${heading}</strong><small>Elige tu app de navegación. HÁGALE no abre ninguna ruta hasta que la toques.</small></div>
+      <div class="driver-navigation-options">
+        <a class="button driver-navigation-link driver-navigation-link-waze" href="${escapeHtml(wazeUrl)}" target="_blank" rel="noopener noreferrer">Abrir Waze</a>
+        <a class="button driver-navigation-link driver-navigation-link-google" href="${escapeHtml(googleMapsUrl)}" target="_blank" rel="noopener noreferrer">Google Maps</a>
+      </div>
+    </section>`;
 }
 
 function getDriverMapPoints() {
