@@ -98,6 +98,39 @@ public sealed class DriverProfileTests
     }
 
     [Fact]
+    public void Dispatch_presence_is_leased_and_expires_when_polling_stops()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var driver = new DriverProfile(Guid.NewGuid(), now);
+        PrepareForApproval(driver);
+        driver.Approve(null, now);
+        driver.SetAvailability(DriverAvailabilityStatus.Available);
+
+        Assert.True(driver.RefreshDispatchPresence(now));
+        Assert.True(driver.IsDispatchPresenceActiveAt(now.AddSeconds(11)));
+        Assert.False(driver.IsDispatchPresenceActiveAt(now.AddSeconds(12)));
+
+        driver.SetAvailability(DriverAvailabilityStatus.Offline);
+
+        Assert.Null(driver.DispatchPresenceExpiresAtUtc);
+        Assert.False(driver.IsDispatchPresenceActiveAt(now));
+    }
+
+    [Fact]
+    public void Frequent_dispatch_polling_refreshes_presence_without_writing_on_every_poll()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var driver = new DriverProfile(Guid.NewGuid(), now);
+        PrepareForApproval(driver);
+        driver.Approve(null, now);
+        driver.SetAvailability(DriverAvailabilityStatus.Available);
+
+        Assert.True(driver.RefreshDispatchPresence(now));
+        Assert.False(driver.RefreshDispatchPresence(now.AddSeconds(2)));
+        Assert.True(driver.RefreshDispatchPresence(now.AddSeconds(8)));
+    }
+
+    [Fact]
     public void Available_driver_can_update_dispatch_location_and_disconnect_clears_it()
     {
         var driver = new DriverProfile(Guid.NewGuid(), DateTimeOffset.UtcNow);

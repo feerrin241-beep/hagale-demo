@@ -93,7 +93,9 @@ public sealed record DriverRideRequestDto(
     int FavorableOfferMinimumPercent = PricingRule.DefaultFavorableOfferMinimumPercent,
     Guid? PendingDriverOfferId = null,
     int? PendingDriverOfferPriceCop = null,
-    DateTimeOffset? PendingDriverOfferExpiresAtUtc = null);
+    DateTimeOffset? PendingDriverOfferExpiresAtUtc = null,
+    bool HasPersonalDispatchTurn = false,
+    DateTimeOffset? PersonalDispatchExpiresAtUtc = null);
 
 /// <summary>
 /// Datos mínimos para que el pasajero compare ofertas sin revelar teléfonos,
@@ -182,6 +184,7 @@ public interface IRideRequestService
     Task<IReadOnlyCollection<DriverRideRequestDto>> ListCompletedForDriverAsync(Guid driverUserId, CancellationToken cancellationToken = default);
     Task<DriverActivitySummaryDto> GetActivitySummaryAsync(Guid driverUserId, CancellationToken cancellationToken = default);
     Task<ApplicationResult<DriverRideRequestDto>> AcceptAsync(Guid driverUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
+    Task<ApplicationResult<DriverRideRequestDto>> SkipDispatchTurnAsync(Guid driverUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
     Task<ApplicationResult<DriverRideRequestDto>> MakeCounterOfferAsync(Guid driverUserId, Guid rideRequestId, CreateCounterOfferCommand command, CancellationToken cancellationToken = default);
     Task<ApplicationResult<DriverRideRequestDto>> MarkDriverEnRouteAsync(Guid driverUserId, Guid rideRequestId, CancellationToken cancellationToken = default);
     Task<ApplicationResult<DriverRideRequestDto>> MarkDriverArrivedAsync(Guid driverUserId, Guid rideRequestId, CancellationToken cancellationToken = default);

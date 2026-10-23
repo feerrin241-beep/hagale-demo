@@ -100,6 +100,9 @@ namespace Hagale.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("LocationUpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("DispatchPresenceExpiresAtUtc")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -366,6 +369,11 @@ namespace Hagale.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("ResolvedAtUtc")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<bool>("HasResponded")
+                        .ValueGeneratedNever()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<Guid>("RideRequestId")
                         .HasColumnType("uniqueidentifier");
 
@@ -380,6 +388,11 @@ namespace Hagale.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("DriverProfileId", "Status", "ExpiresAtUtc");
+
+                    b.HasIndex("DriverProfileId")
+                        .IsUnique()
+                        .HasFilter("[Status] = N'Pending' AND [HasResponded] = 0")
+                        .HasDatabaseName("IX_RideDriverOffers_DriverProfileId_PersonalTurn");
 
                     b.HasIndex("RideRequestId", "DriverProfileId", "SearchRound")
                         .IsUnique();

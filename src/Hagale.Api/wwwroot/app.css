@@ -8228,3 +8228,46 @@ html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
   .customer-driver-offer-price { justify-items: start; text-align: left; }
   .customer-offer-pick-button { width: 100%; }
 }
+
+.driver-request-row.has-personal-dispatch-turn {
+  border-left: 5px solid #72e79b;
+  background: rgba(114, 231, 155, .1);
+}
+.driver-request-row.has-personal-dispatch-turn .driver-request-pulse {
+  color: #087247;
+  font-weight: 1000;
+}
+.driver-personal-turn {
+  display: grid;
+  gap: .5rem;
+  padding: .85rem 1rem;
+  border: 1px solid #72e79b;
+  border-radius: .85rem;
+  color: #eafff0;
+  background: #101914;
+  font-size: 1.05rem;
+  font-weight: 950;
+  text-align: center;
+}
+.driver-personal-turn .driver-pending-offer-timer-bar { background: rgba(255,255,255,.18); }
+.driver-personal-turn .driver-pending-offer-timer-bar i { background: #79e8a1; }
+.driver-dispatch-waiting {
+  display: grid;
+  gap: .35rem;
+  padding: .9rem 1rem;
+  border: 1px solid #d8d8d2;
+  border-radius: .85rem;
+  color: #313238;
+  background: #f6f6f2;
+}
+.driver-dispatch-waiting strong { font-size: 1.02rem; }
+.driver-dispatch-waiting span { color: #5c5d64; font-size: .9rem; line-height: 1.4; }
+.driver-skip-turn {
+  min-height: 3rem;
+  border: 1px solid #b5b6bb;
+  color: #313238;
+  background: #f2f2ee;
+  font-weight: 900;
+}
+.driver-skip-turn:hover,
+.driver-skip-turn:focus-visible { border-color: #d17a7a; color: #7c1e1e; background: #fff0ed; }

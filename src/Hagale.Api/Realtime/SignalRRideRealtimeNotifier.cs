@@ -44,6 +44,16 @@ public sealed class SignalRRideRealtimeNotifier(
             [RideEventsHub.DriversGroup],
             cancellationToken);
 
+    public Task NotifyDriverDispatchChangedAsync(
+        Guid driverUserId,
+        Guid rideRequestId,
+        CancellationToken cancellationToken = default) =>
+        PublishSafelyAsync(
+            RideEventsHub.DispatchChangedEvent,
+            new { rideRequestId },
+            [RideEventsHub.UserGroup(driverUserId)],
+            cancellationToken);
+
     public Task NotifyDriverLocationChangedAsync(
         Guid customerUserId,
         Guid rideRequestId,

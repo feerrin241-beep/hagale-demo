@@ -246,9 +246,9 @@ public sealed class RideRequestRepository(
                     await database.Database.ExecuteSqlInterpolatedAsync(
                         $"""
                         INSERT INTO "RideDriverOffers"
-                            ("Id", "RideRequestId", "DriverProfileId", "OfferedPriceCop", "OfferedAtUtc", "ExpiresAtUtc", "SearchRound", "Status", "ResolvedAtUtc")
+                            ("Id", "RideRequestId", "DriverProfileId", "OfferedPriceCop", "OfferedAtUtc", "ExpiresAtUtc", "SearchRound", "Status", "ResolvedAtUtc", "HasResponded")
                         VALUES
-                            ({offer.Id}, {offer.RideRequestId}, {offer.DriverProfileId}, {offer.OfferedPriceCop}, {offer.OfferedAtUtc}, {offer.ExpiresAtUtc}, {offer.SearchRound}, {offer.Status.ToString()}, {offer.ResolvedAtUtc})
+                            ({offer.Id}, {offer.RideRequestId}, {offer.DriverProfileId}, {offer.OfferedPriceCop}, {offer.OfferedAtUtc}, {offer.ExpiresAtUtc}, {offer.SearchRound}, {offer.Status.ToString()}, {offer.ResolvedAtUtc}, {offer.HasResponded})
                         """,
                         cancellationToken);
 
@@ -260,6 +260,10 @@ public sealed class RideRequestRepository(
                     {
                         trackedOffer.State = EntityState.Detached;
                     }
+
+                    // Persist an expired previous personal turn, if the same
+                    // request advanced to a different nearby driver.
+                    await database.SaveChangesAsync(cancellationToken);
                 }
                 else
                 {

@@ -66,6 +66,7 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
             entity.Property(driver => driver.AdministrativeNotes).HasMaxLength(1_000);
             entity.Property(driver => driver.LastKnownLatitude).HasPrecision(9, 6);
             entity.Property(driver => driver.LastKnownLongitude).HasPrecision(9, 6);
+            entity.Property(driver => driver.DispatchPresenceExpiresAtUtc);
             ConfigureConcurrencyToken(entity.Property(driver => driver.RowVersion), usesPostgres);
             entity.HasOne<AppUser>()
                 .WithOne()
@@ -205,9 +206,19 @@ public sealed class HagaleDbContext(DbContextOptions<HagaleDbContext> options)
             entity.Property(offer => offer.OfferedAtUtc).IsRequired();
             entity.Property(offer => offer.ExpiresAtUtc).IsRequired();
             entity.Property(offer => offer.SearchRound).IsRequired();
+            entity.Property(offer => offer.HasResponded)
+                .HasDefaultValue(true)
+                .ValueGeneratedNever()
+                .IsRequired();
             entity.HasIndex(offer => new { offer.RideRequestId, offer.Status, offer.SearchRound });
             entity.HasIndex(offer => new { offer.DriverProfileId, offer.Status, offer.ExpiresAtUtc });
             entity.HasIndex(offer => new { offer.RideRequestId, offer.DriverProfileId, offer.SearchRound }).IsUnique();
+            entity.HasIndex(offer => offer.DriverProfileId)
+                .HasDatabaseName("IX_RideDriverOffers_DriverProfileId_PersonalTurn")
+                .IsUnique()
+                .HasFilter(usesPostgres
+                    ? "\"Status\" = 'Pending' AND \"HasResponded\" = FALSE"
+                    : "[Status] = N'Pending' AND [HasResponded] = 0");
             entity.HasOne<DriverProfile>()
                 .WithMany()
                 .HasForeignKey(offer => offer.DriverProfileId)

@@ -18,7 +18,8 @@ public sealed class RideDriverOffer
         int offeredPriceCop,
         DateTimeOffset offeredAtUtc,
         DateTimeOffset expiresAtUtc,
-        int searchRound)
+        int searchRound,
+        bool hasResponded = true)
     {
         if (rideRequestId == Guid.Empty)
         {
@@ -52,6 +53,7 @@ public sealed class RideDriverOffer
         OfferedAtUtc = offeredAtUtc;
         ExpiresAtUtc = expiresAtUtc;
         SearchRound = searchRound;
+        HasResponded = hasResponded;
     }
 
     public Guid Id { get; private set; }
@@ -61,11 +63,33 @@ public sealed class RideDriverOffer
     public DateTimeOffset OfferedAtUtc { get; private set; }
     public DateTimeOffset ExpiresAtUtc { get; private set; }
     public int SearchRound { get; private set; }
+    public bool HasResponded { get; private set; } = true;
     public RideDriverOfferStatus Status { get; private set; } = RideDriverOfferStatus.Pending;
     public DateTimeOffset? ResolvedAtUtc { get; private set; }
 
     public bool IsPendingAt(DateTimeOffset atUtc) =>
         Status == RideDriverOfferStatus.Pending && atUtc < ExpiresAtUtc;
+
+    public bool IsPersonalDispatchTurnAt(DateTimeOffset atUtc) =>
+        !HasResponded && IsPendingAt(atUtc);
+
+    internal void RecordDispatchResponse(int offeredPriceCop, DateTimeOffset respondedAtUtc)
+    {
+        if (!IsPersonalDispatchTurnAt(respondedAtUtc))
+        {
+            throw new DomainRuleViolationException("El tiempo para responder este aviso terminó. La solicitud pasó al siguiente conductor.");
+        }
+
+        if (offeredPriceCop <= 0)
+        {
+            throw new DomainRuleViolationException("El valor de la oferta debe ser mayor que cero.");
+        }
+
+        OfferedPriceCop = offeredPriceCop;
+        OfferedAtUtc = respondedAtUtc;
+        ExpiresAtUtc = respondedAtUtc.AddSeconds(RideRequest.OfferCollectionWindowSeconds);
+        HasResponded = true;
+    }
 
     internal void Select(DateTimeOffset resolvedAtUtc) => Resolve(RideDriverOfferStatus.Selected, resolvedAtUtc);
 

@@ -9,6 +9,7 @@ public sealed class RideRequest
     /// cercanas. Puede abrir una nueva ronda si no elige ninguna.
     /// </summary>
     public const int OfferCollectionWindowSeconds = 60;
+    public const int PersonalDispatchWindowSeconds = 10;
 
     private readonly List<RideDriverOffer> _driverOffers = [];
 
@@ -252,6 +253,107 @@ public sealed class RideRequest
     }
 
     /// <summary>
+    /// Reserva el turno personal de diez segundos para un conductor. La fila
+    /// provisional solo se vuelve oferta visible al pasajero cuando responde.
+    /// </summary>
+    public RideDriverOffer StartDispatchTurn(Guid driverProfileId, DateTimeOffset startedAtUtc)
+    {
+        if (driverProfileId == Guid.Empty)
+        {
+            throw new DomainRuleViolationException("El aviso debe identificar a un conductor válido.");
+        }
+
+        if (!IsOfferWindowOpenAt(startedAtUtc))
+        {
+            throw new DomainRuleViolationException("La búsqueda de esta solicitud terminó.");
+        }
+
+        if (GetOpenDispatchTurn(startedAtUtc) is not null)
+        {
+            throw new DomainRuleViolationException("Otro conductor tiene el turno personal de esta solicitud.");
+        }
+
+        if (_driverOffers.Any(offer =>
+                offer.DriverProfileId == driverProfileId && offer.SearchRound == OfferSearchRound))
+        {
+            throw new DomainRuleViolationException("Este conductor ya tuvo su turno en la ronda actual.");
+        }
+
+        var dispatchTurn = new RideDriverOffer(
+            Id,
+            driverProfileId,
+            ProposedPriceCop,
+            startedAtUtc,
+            startedAtUtc.AddSeconds(PersonalDispatchWindowSeconds),
+            OfferSearchRound,
+            hasResponded: false);
+        _driverOffers.Add(dispatchTurn);
+        return dispatchTurn;
+    }
+
+    public RideDriverOffer? GetOpenDispatchTurn(DateTimeOffset atUtc) =>
+        _driverOffers
+            .Where(offer => !offer.HasResponded && offer.SearchRound == OfferSearchRound && offer.IsPendingAt(atUtc))
+            .OrderByDescending(offer => offer.OfferedAtUtc)
+            .FirstOrDefault();
+
+    public RideDriverOffer? GetOpenDispatchTurnForDriver(Guid driverProfileId, DateTimeOffset atUtc)
+    {
+        var turn = GetOpenDispatchTurn(atUtc);
+        return turn?.DriverProfileId == driverProfileId ? turn : null;
+    }
+
+    public bool ExpireDispatchTurnIfElapsed(DateTimeOffset atUtc)
+    {
+        var expiredTurns = _driverOffers
+            .Where(offer => !offer.HasResponded &&
+                offer.Status == RideDriverOfferStatus.Pending &&
+                atUtc >= offer.ExpiresAtUtc)
+            .ToArray();
+        if (expiredTurns.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var turn in expiredTurns)
+        {
+            turn.Expire(atUtc);
+        }
+
+        return true;
+    }
+
+    public RideDriverOffer SkipDispatchTurn(Guid driverProfileId, DateTimeOffset skippedAtUtc)
+    {
+        var turn = GetOpenDispatchTurnForDriver(driverProfileId, skippedAtUtc)
+            ?? throw new DomainRuleViolationException("Este aviso ya venció o ya pasó a otro conductor.");
+        turn.Withdraw(skippedAtUtc);
+        return turn;
+    }
+
+    public RideDriverOffer RespondToDispatchTurn(
+        Guid driverProfileId,
+        int offeredPriceCop,
+        DateTimeOffset respondedAtUtc,
+        int? maximumDriverPriceCop = null)
+    {
+        var turn = GetOpenDispatchTurnForDriver(driverProfileId, respondedAtUtc)
+            ?? throw new DomainRuleViolationException("Este aviso ya venció o ya pasó a otro conductor.");
+        if (offeredPriceCop < MinimumFareCopAtRequest)
+        {
+            throw new DomainRuleViolationException("La oferta no puede ser inferior a la tarifa mínima vigente.");
+        }
+
+        if (maximumDriverPriceCop.HasValue && offeredPriceCop > maximumDriverPriceCop.Value)
+        {
+            throw new DomainRuleViolationException("La oferta supera el máximo permitido: hasta el doble de la tarifa justa estimada.");
+        }
+
+        turn.RecordDispatchResponse(offeredPriceCop, respondedAtUtc);
+        return turn;
+    }
+
+    /// <summary>
     /// El cliente elige una de las ofertas. Las demás se cierran en la misma
     /// operación para que un conductor no quede esperando una carrera ya tomada.
     /// </summary>
@@ -263,7 +365,7 @@ public sealed class RideRequest
         }
 
         var selectedOffer = _driverOffers.SingleOrDefault(offer => offer.Id == offerId);
-        if (selectedOffer is null || !selectedOffer.IsPendingAt(selectedAtUtc))
+        if (selectedOffer is null || !selectedOffer.HasResponded || !selectedOffer.IsPendingAt(selectedAtUtc))
         {
             throw new DomainRuleViolationException("Esta oferta ya no está disponible. Actualiza las propuestas recibidas.");
         }
@@ -309,6 +411,7 @@ public sealed class RideRequest
     public bool HasPendingOfferFromDriver(Guid driverProfileId, DateTimeOffset atUtc) =>
         _driverOffers.Any(offer =>
             offer.DriverProfileId == driverProfileId &&
+            offer.HasResponded &&
             offer.IsPendingAt(atUtc));
 
     public void MakeCounterOffer(
@@ -501,7 +604,14 @@ public sealed class RideRequest
                 continue;
             }
 
-            offer.Decline(resolvedAtUtc);
+            if (offer.HasResponded)
+            {
+                offer.Decline(resolvedAtUtc);
+            }
+            else
+            {
+                offer.Withdraw(resolvedAtUtc);
+            }
         }
     }
 

@@ -17,6 +17,11 @@ public interface IRideRealtimeNotifier
         RideServiceType serviceType,
         CancellationToken cancellationToken = default);
 
+    Task NotifyDriverDispatchChangedAsync(
+        Guid driverUserId,
+        Guid rideRequestId,
+        CancellationToken cancellationToken = default) => Task.CompletedTask;
+
     Task NotifyDriverLocationChangedAsync(
         Guid customerUserId,
         Guid rideRequestId,

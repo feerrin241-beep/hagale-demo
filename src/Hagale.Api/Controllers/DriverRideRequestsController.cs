@@ -60,6 +60,16 @@ public sealed class DriverRideRequestsController(IRideRequestService rideRequest
             : this.BusinessRuleViolation("rideAssignment", result.Error!);
     }
 
+    [HttpPost("{rideRequestId:guid}/skip")]
+    [ProducesResponseType<DriverRideRequestDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<DriverRideRequestDto>> Skip(Guid rideRequestId, CancellationToken cancellationToken)
+    {
+        var result = await rideRequestService.SkipDispatchTurnAsync(User.GetRequiredUserId(), rideRequestId, cancellationToken);
+        return result.IsSuccess
+            ? Ok(result.Value)
+            : this.BusinessRuleViolation("rideDispatchTurn", result.Error!);
+    }
+
     [HttpPost("{rideRequestId:guid}/counter-offer")]
     [ProducesResponseType<DriverRideRequestDto>(StatusCodes.Status200OK)]
     public async Task<ActionResult<DriverRideRequestDto>> MakeCounterOffer(

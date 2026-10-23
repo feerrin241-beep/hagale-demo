@@ -66,6 +66,9 @@ public static class DatabaseInitializer
             // sentencias mantienen compatibles las bases ya existentes al
             // añadir el flujo de varias propuestas por solicitud.
             await database.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE "DriverProfiles"
+                    ADD COLUMN IF NOT EXISTS "DispatchPresenceExpiresAtUtc" timestamp with time zone NULL;
+
                 ALTER TABLE "RideRequests"
                     ADD COLUMN IF NOT EXISTS "OfferWindowEndsAtUtc" timestamp with time zone NULL;
                 ALTER TABLE "RideRequests"
@@ -87,12 +90,17 @@ public static class DatabaseInitializer
                     CONSTRAINT "FK_RideDriverOffers_DriverProfiles_DriverProfileId"
                         FOREIGN KEY ("DriverProfileId") REFERENCES "DriverProfiles" ("Id") ON DELETE RESTRICT
                 );
+                ALTER TABLE "RideDriverOffers"
+                    ADD COLUMN IF NOT EXISTS "HasResponded" boolean NOT NULL DEFAULT TRUE;
                 CREATE INDEX IF NOT EXISTS "IX_RideDriverOffers_RideRequestId_Status_SearchRound"
                     ON "RideDriverOffers" ("RideRequestId", "Status", "SearchRound");
                 CREATE INDEX IF NOT EXISTS "IX_RideDriverOffers_DriverProfileId_Status_ExpiresAtUtc"
                     ON "RideDriverOffers" ("DriverProfileId", "Status", "ExpiresAtUtc");
                 CREATE UNIQUE INDEX IF NOT EXISTS "IX_RideDriverOffers_RideRequestId_DriverProfileId_SearchRound"
                     ON "RideDriverOffers" ("RideRequestId", "DriverProfileId", "SearchRound");
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_RideDriverOffers_DriverProfileId_PersonalTurn"
+                    ON "RideDriverOffers" ("DriverProfileId")
+                    WHERE "Status" = 'Pending' AND "HasResponded" = FALSE;
                 """, cancellationToken);
         }
 

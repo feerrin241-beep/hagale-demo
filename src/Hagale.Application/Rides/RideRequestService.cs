@@ -307,7 +307,7 @@ public sealed class RideRequestService(
 
         var boardNow = timeProvider.GetUtcNow();
         var availableOffers = request.DriverOffers
-            .Where(offer => offer.IsPendingAt(boardNow))
+            .Where(offer => offer.HasResponded && offer.IsPendingAt(boardNow))
             .OrderBy(offer => offer.OfferedPriceCop)
             .ThenBy(offer => offer.OfferedAtUtc)
             .ToArray();
@@ -316,7 +316,7 @@ public sealed class RideRequestService(
         foreach (var offer in availableOffers)
         {
             var driver = await driverRepository.GetByIdAsync(offer.DriverProfileId, cancellationToken);
-            if (!CanReceiveRequests(driver) || !CanServe(driver!, request))
+            if (!CanAcceptSubmittedOffer(driver) || !CanServe(driver!, request))
             {
                 continue;
             }
@@ -363,7 +363,8 @@ public sealed class RideRequestService(
             }
 
             var driver = await driverRepository.GetByIdAsync(offer.DriverProfileId, cancellationToken);
-            if (!CanReceiveRequests(driver) || !CanServe(driver!, request))
+            if (!CanAcceptSubmittedOffer(driver) || !CanServe(driver!, request) ||
+                await rideRequestRepository.GetActiveByDriverProfileIdAsync(driver!.Id, cancellationToken) is not null)
             {
                 return ApplicationResult<RideRequestDto>.Failure("El conductor ya no está disponible. Elige otra propuesta.");
             }
@@ -426,7 +427,7 @@ public sealed class RideRequestService(
         }
 
         var driver = await driverRepository.ReloadByIdAsync(driverProfileId, cancellationToken);
-        if (!CanReceiveRequests(driver) || !CanServe(driver!, request) ||
+        if (!CanAcceptSubmittedOffer(driver) || !CanServe(driver!, request) ||
             await rideRequestRepository.GetActiveByDriverProfileIdAsync(driverProfileId, cancellationToken) is not null)
         {
             return ApplicationResult<RideRequestDto>.Failure(
@@ -493,12 +494,129 @@ public sealed class RideRequestService(
         }
 
         var now = timeProvider.GetUtcNow();
+        if (driver!.RefreshDispatchPresence(now))
+        {
+            await driverRepository.SaveChangesAsync(cancellationToken);
+        }
+
         var allPendingRequests = await rideRequestRepository.ListPendingAsync(cancellationToken);
+        var staleTurnRequestIds = allPendingRequests
+            .Where(request => request.DriverOffers.Any(offer =>
+                !offer.HasResponded && offer.Status == RideDriverOfferStatus.Pending && now >= offer.ExpiresAtUtc))
+            .Select(request => request.Id)
+            .ToArray();
+        var expiredTurnWasSaved = false;
+        foreach (var staleRequestId in staleTurnRequestIds)
+        {
+            await using var staleRequestLock = await rideRequestRepository.LockForUpdateAsync(staleRequestId, cancellationToken);
+            var staleRequest = staleRequestLock.Request;
+            if (staleRequest?.ExpireDispatchTurnIfElapsed(now) == true)
+            {
+                await staleRequestLock.SaveChangesAsync(cancellationToken);
+                expiredTurnWasSaved = true;
+            }
+        }
+
+        if (expiredTurnWasSaved)
+        {
+            allPendingRequests = await rideRequestRepository.ListPendingAsync(cancellationToken);
+        }
+
+        // Keep the one-minute search alive from the dispatch side too. The
+        // customer may switch panels or temporarily lose foreground polling;
+        // any available driver refresh can advance an elapsed round safely.
+        var expiredSearchRoundIds = allPendingRequests
+            .Where(request => request.Status == RideRequestStatus.Pending && !request.IsOfferWindowOpenAt(now))
+            .Select(request => request.Id)
+            .ToArray();
+        var searchRoundWasRestarted = false;
+        foreach (var expiredSearchRoundId in expiredSearchRoundIds)
+        {
+            await using var expiredRoundLock = await rideRequestRepository.LockForUpdateAsync(expiredSearchRoundId, cancellationToken);
+            var expiredRoundRequest = expiredRoundLock.Request;
+            if (expiredRoundRequest?.Status != RideRequestStatus.Pending || expiredRoundRequest.IsOfferWindowOpenAt(now))
+            {
+                continue;
+            }
+
+            expiredRoundRequest.RestartOfferCollection(now);
+            await expiredRoundLock.SaveChangesAsync(cancellationToken);
+            searchRoundWasRestarted = true;
+            await NotifyRideChangedAsync(expiredRoundRequest, driver: null, dispatchChanged: true, cancellationToken);
+        }
+
+        if (searchRoundWasRestarted)
+        {
+            allPendingRequests = await rideRequestRepository.ListPendingAsync(cancellationToken);
+        }
+
         // Un conductor mantiene solo una propuesta viva a la vez. Así no puede
         // ser elegido por dos pasajeros simultáneamente mientras sigue libre.
         if (allPendingRequests.Any(request => request.HasPendingOfferFromDriver(driver!.Id, now)))
         {
             return [];
+        }
+
+        var dispatchRadius = maximumPickupDistanceKilometers is > 0
+            ? maximumPickupDistanceKilometers.Value
+            : 15m;
+        var canStartNearbyDispatch = IsFreshDispatchLocation(driver!, now) && allPendingRequests.Any(request =>
+            request.IsOfferWindowOpenAt(now) &&
+            request.GetOpenDispatchTurn(now) is null &&
+            CanServe(driver!, request) &&
+            CalculatePickupDistance(driver!, request) is decimal distance &&
+            distance <= dispatchRadius);
+        var candidateDrivers = canStartNearbyDispatch
+            ? await LoadDispatchCandidateDriversAsync(cancellationToken)
+            : [];
+        var reservedDrivers = allPendingRequests
+            .SelectMany(request => request.DriverOffers)
+            .Where(offer => !offer.HasResponded && offer.IsPersonalDispatchTurnAt(now))
+            .Select(offer => offer.DriverProfileId)
+            .ToHashSet();
+        var driversWithOffersAwaitingCustomer = allPendingRequests
+            .SelectMany(request => request.DriverOffers)
+            .Where(offer => offer.HasResponded && offer.IsPendingAt(now))
+            .Select(offer => offer.DriverProfileId)
+            .ToHashSet();
+        var personalTurns = new Dictionary<Guid, RideDriverOffer>();
+
+        foreach (var request in allPendingRequests
+                     .Where(request => request.IsOfferWindowOpenAt(now))
+                     .OrderBy(request => request.RequestedAtUtc))
+        {
+            var turn = request.GetOpenDispatchTurn(now);
+            var hasNearbyCandidate = turn is null && candidateDrivers.Any(candidate =>
+                CanReceiveDispatchRequests(candidate, now) &&
+                CanServe(candidate, request) &&
+                !reservedDrivers.Contains(candidate.Id) &&
+                !driversWithOffersAwaitingCustomer.Contains(candidate.Id) &&
+                !request.DriverOffers.Any(offer =>
+                    offer.DriverProfileId == candidate.Id && offer.SearchRound == request.OfferSearchRound) &&
+                IsFreshDispatchLocation(candidate, now) &&
+                CalculatePickupDistance(candidate, request) is decimal distance &&
+                distance <= dispatchRadius);
+            if (hasNearbyCandidate)
+            {
+                turn = await EnsureDispatchTurnAsync(
+                    request.Id,
+                    candidateDrivers,
+                    reservedDrivers,
+                    driversWithOffersAwaitingCustomer,
+                    dispatchRadius,
+                    cancellationToken);
+            }
+
+            if (turn is null)
+            {
+                continue;
+            }
+
+            reservedDrivers.Add(turn.DriverProfileId);
+            if (turn.DriverProfileId == driver!.Id)
+            {
+                personalTurns[request.Id] = turn;
+            }
         }
 
         var pendingRequests = allPendingRequests
@@ -513,6 +631,7 @@ public sealed class RideRequestService(
         if (maximumPickupDistanceKilometers is > 0)
         {
             pendingRequests = pendingRequests.Where(item =>
+                personalTurns.ContainsKey(item.Request.Id) ||
                 !item.PickupDistance.HasValue || item.PickupDistance.Value <= maximumPickupDistanceKilometers.Value);
         }
 
@@ -527,10 +646,139 @@ public sealed class RideRequestService(
                     item.Request,
                     item.PickupDistance,
                     CalculateDirectDistanceReferenceFare(pricingRule, item.Request),
-                    pricingRule);
+                    pricingRule,
+                    personalDispatchTurn: personalTurns.GetValueOrDefault(item.Request.Id));
             })
             .ToArray();
     }
+
+    private async Task<IReadOnlyCollection<DriverProfile>> LoadDispatchCandidateDriversAsync(
+        CancellationToken cancellationToken)
+    {
+        const int pageSize = 200;
+        const int maximumCandidates = 5_000;
+        var drivers = new List<DriverProfile>();
+        var skip = 0;
+        var totalCount = int.MaxValue;
+
+        while (skip < totalCount && drivers.Count < maximumCandidates)
+        {
+            var page = await driverRepository.ListAsync(
+                DriverStatus.Approved,
+                skip,
+                Math.Min(pageSize, maximumCandidates - drivers.Count),
+                cancellationToken);
+            drivers.AddRange(page.Items);
+            totalCount = page.TotalCount;
+            if (page.Items.Count == 0)
+            {
+                break;
+            }
+
+            skip += page.Items.Count;
+        }
+
+        return drivers;
+    }
+
+    private async Task<RideDriverOffer?> EnsureDispatchTurnAsync(
+        Guid rideRequestId,
+        IReadOnlyCollection<DriverProfile> candidateDrivers,
+        HashSet<Guid> reservedDriverProfileIds,
+        HashSet<Guid> driversWithOffersAwaitingCustomer,
+        decimal maximumPickupDistanceKilometers,
+        CancellationToken cancellationToken)
+    {
+        await using var requestLock = await rideRequestRepository.LockForUpdateAsync(rideRequestId, cancellationToken);
+        var request = requestLock.Request;
+        var now = timeProvider.GetUtcNow();
+        if (request is null || !request.IsOfferWindowOpenAt(now))
+        {
+            return null;
+        }
+
+        var currentTurn = request.GetOpenDispatchTurn(now);
+        if (currentTurn is not null)
+        {
+            return currentTurn;
+        }
+
+        var expiredPreviousTurn = request.ExpireDispatchTurnIfElapsed(now);
+        var orderedCandidateIds = candidateDrivers
+            .Where(candidate => CanReceiveDispatchRequests(candidate, now))
+            .Where(candidate => CanServe(candidate, request))
+            .Where(candidate => !reservedDriverProfileIds.Contains(candidate.Id))
+            .Where(candidate => !driversWithOffersAwaitingCustomer.Contains(candidate.Id))
+            .Where(candidate => !request.DriverOffers.Any(offer =>
+                offer.DriverProfileId == candidate.Id && offer.SearchRound == request.OfferSearchRound))
+            .Where(candidate => IsFreshDispatchLocation(candidate, now))
+            .Select(candidate => new
+            {
+                Driver = candidate,
+                PickupDistance = CalculatePickupDistance(candidate, request)
+            })
+            .Where(candidate => candidate.PickupDistance.HasValue &&
+                candidate.PickupDistance.Value <= maximumPickupDistanceKilometers)
+            .OrderBy(candidate => candidate.PickupDistance)
+            .Select(candidate => candidate.Driver.Id)
+            .ToArray();
+
+        foreach (var candidateProfileId in orderedCandidateIds)
+        {
+            // Re-read the closest candidate while the request lock is held.
+            // The driver's panel may have disconnected after the candidate
+            // list was loaded; never reserve a turn from that stale snapshot.
+            var candidate = await driverRepository.GetByIdAsync(candidateProfileId, cancellationToken);
+            if (!CanReceiveDispatchRequests(candidate, now) ||
+                !CanServe(candidate!, request) ||
+                !IsFreshDispatchLocation(candidate!, now))
+            {
+                continue;
+            }
+
+            var pickupDistance = CalculatePickupDistance(candidate!, request);
+            if (!pickupDistance.HasValue || pickupDistance.Value > maximumPickupDistanceKilometers)
+            {
+                continue;
+            }
+
+            var dispatchTurn = request.StartDispatchTurn(candidate!.Id, now);
+            try
+            {
+                await requestLock.SaveDriverOfferAsync(dispatchTurn, cancellationToken);
+            }
+            catch (ConcurrentUpdateException)
+            {
+                // A different request may have given this driver a turn at the
+                // same moment. The next dispatch refresh will select another.
+                return null;
+            }
+
+            reservedDriverProfileIds.Add(candidate.Id);
+            await realtimeNotifier.NotifyDriverDispatchChangedAsync(
+                candidate.UserId,
+                request.Id,
+                cancellationToken);
+            return dispatchTurn;
+        }
+
+        if (expiredPreviousTurn)
+        {
+            await requestLock.SaveChangesAsync(cancellationToken);
+            await realtimeNotifier.NotifyDispatchChangedAsync(
+                request.OperatingCityCode,
+                request.ServiceType,
+                cancellationToken);
+        }
+
+        return null;
+    }
+
+    private static bool IsFreshDispatchLocation(DriverProfile driver, DateTimeOffset now) =>
+        driver.LastKnownLatitude.HasValue &&
+        driver.LastKnownLongitude.HasValue &&
+        driver.LocationUpdatedAtUtc.HasValue &&
+        driver.LocationUpdatedAtUtc.Value >= now.AddMinutes(-5);
 
     public async Task<DriverRideRequestDto?> GetCurrentForDriverAsync(
         Guid driverUserId,
@@ -572,7 +820,7 @@ public sealed class RideRequestService(
         var now = timeProvider.GetUtcNow();
         var pendingRequestAndOffer = (await rideRequestRepository.ListPendingAsync(cancellationToken))
             .SelectMany(request => request.DriverOffers
-                .Where(offer => offer.DriverProfileId == driver.Id && offer.IsPendingAt(now))
+                .Where(offer => offer.DriverProfileId == driver.Id && offer.HasResponded && offer.IsPendingAt(now))
                 .Select(offer => new { Request = request, Offer = offer }))
             .OrderBy(item => item.Offer.ExpiresAtUtc)
             .FirstOrDefault();
@@ -653,6 +901,49 @@ public sealed class RideRequestService(
         CancellationToken cancellationToken = default) =>
         SubmitDriverOfferAsync(driverUserId, rideRequestId, offeredPriceCop: null, cancellationToken);
 
+    public async Task<ApplicationResult<DriverRideRequestDto>> SkipDispatchTurnAsync(
+        Guid driverUserId,
+        Guid rideRequestId,
+        CancellationToken cancellationToken = default)
+    {
+        var driver = await driverRepository.GetByUserIdAsync(driverUserId, cancellationToken);
+        if (driver?.Status != DriverStatus.Approved)
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure("Solo un conductor aprobado puede omitir una solicitud.");
+        }
+
+        try
+        {
+            await using var requestLock = await rideRequestRepository.LockForUpdateAsync(rideRequestId, cancellationToken);
+            var request = requestLock.Request;
+            if (request is null || !CanServe(driver!, request))
+            {
+                return ApplicationResult<DriverRideRequestDto>.Failure("La solicitud ya no está disponible para tu vehículo y ciudad de operación.");
+            }
+
+            request.SkipDispatchTurn(driver!.Id, timeProvider.GetUtcNow());
+            await requestLock.SaveChangesAsync(cancellationToken);
+            await NotifyRideChangedAsync(request, driver, dispatchChanged: true, cancellationToken);
+            var pricingRule = await pricingRuleRepository.GetByCityAndServiceAsync(
+                request.OperatingCityCode,
+                request.ServiceType,
+                cancellationToken);
+            return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
+                request,
+                CalculatePickupDistance(driver, request),
+                CalculateDirectDistanceReferenceFare(pricingRule, request),
+                pricingRule));
+        }
+        catch (ConcurrentUpdateException)
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure("El turno cambió al mismo tiempo. Actualicé la bandeja para continuar.");
+        }
+        catch (DomainRuleViolationException exception)
+        {
+            return ApplicationResult<DriverRideRequestDto>.Failure(exception.Message);
+        }
+    }
+
     public async Task<ApplicationResult<DriverRideRequestDto>> MakeCounterOfferAsync(
         Guid driverUserId,
         Guid rideRequestId,
@@ -700,7 +991,7 @@ public sealed class RideRequestService(
             var now = timeProvider.GetUtcNow();
             var price = offeredPriceCop ?? request.ProposedPriceCop;
             var existingOffer = request.DriverOffers.FirstOrDefault(offer =>
-                offer.DriverProfileId == driver!.Id && offer.IsPendingAt(now));
+                offer.DriverProfileId == driver!.Id && offer.HasResponded && offer.IsPendingAt(now));
             if (existingOffer is not null)
             {
                 if (existingOffer.OfferedPriceCop == price)
@@ -741,12 +1032,12 @@ public sealed class RideRequestService(
                     $"Tu oferta no puede superar {maximumDriverPriceCop:N0} COP (máximo 100 % por encima de la tarifa justa)." );
             }
 
-            var offer = request.AddDriverOffer(
+            var offer = request.RespondToDispatchTurn(
                 driver.Id,
                 price,
                 now,
                 offeredPriceCop.HasValue ? maximumDriverPriceCop : null);
-            await requestLock.SaveDriverOfferAsync(offer, cancellationToken);
+            await requestLock.SaveChangesAsync(cancellationToken);
             await NotifyRideChangedAsync(request, driver: null, dispatchChanged: true, cancellationToken);
             return ApplicationResult<DriverRideRequestDto>.Success(MapForDriver(
                 request,
@@ -789,7 +1080,7 @@ public sealed class RideRequestService(
                     request.ServiceType,
                     cancellationToken);
                 var existingOffer = request.DriverOffers.FirstOrDefault(offer =>
-                    offer.DriverProfileId == driver.Id && offer.IsPendingAt(now));
+                    offer.DriverProfileId == driver.Id && offer.HasResponded && offer.IsPendingAt(now));
                 if (existingOffer is not null)
                 {
                     var priceAlreadySent = offeredPriceCop ?? request.ProposedPriceCop;
@@ -839,7 +1130,10 @@ public sealed class RideRequestService(
                         $"Tu oferta no puede superar {maximumDriverPriceCop:N0} COP (máximo 100 % por encima de la tarifa justa).");
                 }
 
-                var offer = request.AddDriverOffer(
+                // A retry after a concurrent write must obey the same personal
+                // ten-second turn as the normal submission path. Never turn a
+                // provisional or expired dispatch row into a customer offer.
+                var offer = request.RespondToDispatchTurn(
                     driver.Id,
                     price,
                     now,
@@ -1083,7 +1377,8 @@ public sealed class RideRequestService(
         decimal? pickupDistanceKilometers = null,
         int? directDistanceReferenceFareCop = null,
         PricingRule? pricingRule = null,
-        RideDriverOffer? pendingDriverOffer = null) => new(
+        RideDriverOffer? pendingDriverOffer = null,
+        RideDriverOffer? personalDispatchTurn = null) => new(
         request.Id,
         request.PickupAddress,
         request.DestinationAddress,
@@ -1120,7 +1415,9 @@ public sealed class RideRequestService(
         pricingRule?.FavorableOfferMinimumPercent ?? PricingRule.DefaultFavorableOfferMinimumPercent,
         pendingDriverOffer?.Id,
         pendingDriverOffer?.OfferedPriceCop,
-        pendingDriverOffer?.ExpiresAtUtc);
+        pendingDriverOffer?.ExpiresAtUtc,
+        personalDispatchTurn is not null,
+        personalDispatchTurn?.ExpiresAtUtc);
 
     private static decimal? CalculatePickupDistance(DriverProfile driver, RideRequest request) =>
         driver.LastKnownLatitude.HasValue && driver.LastKnownLongitude.HasValue &&
@@ -1207,6 +1504,14 @@ public sealed class RideRequestService(
         driver is not null &&
         driver.Status == DriverStatus.Approved &&
         driver.AvailabilityStatus == DriverAvailabilityStatus.Available;
+
+    private static bool CanReceiveDispatchRequests(DriverProfile? driver, DateTimeOffset nowUtc) =>
+        CanReceiveRequests(driver) && driver!.IsDispatchPresenceActiveAt(nowUtc);
+
+    private static bool CanAcceptSubmittedOffer(DriverProfile? driver) =>
+        driver is not null &&
+        driver.Status == DriverStatus.Approved &&
+        driver.AvailabilityStatus != DriverAvailabilityStatus.Busy;
 
     private static bool CanServe(DriverProfile driver, RideRequest request) =>
         driver.Vehicles.Any(vehicle =>

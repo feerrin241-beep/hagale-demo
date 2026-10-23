@@ -4,6 +4,9 @@ namespace Hagale.Domain.Drivers;
 
 public sealed class DriverProfile
 {
+    public const int DispatchPresenceLeaseSeconds = 12;
+    private const int DispatchPresenceRefreshThresholdSeconds = 5;
+
     private readonly List<Vehicle> _vehicles = [];
     private readonly List<DriverDocument> _documents = [];
 
@@ -34,6 +37,7 @@ public sealed class DriverProfile
     public decimal? LastKnownLatitude { get; private set; }
     public decimal? LastKnownLongitude { get; private set; }
     public DateTimeOffset? LocationUpdatedAtUtc { get; private set; }
+    public DateTimeOffset? DispatchPresenceExpiresAtUtc { get; private set; }
     public byte[] RowVersion { get; private set; } = null!;
     public IReadOnlyCollection<Vehicle> Vehicles => _vehicles.AsReadOnly();
     public IReadOnlyCollection<DriverDocument> Documents => _documents.AsReadOnly();
@@ -123,11 +127,43 @@ public sealed class DriverProfile
         }
 
         AvailabilityStatus = availabilityStatus;
+        if (availabilityStatus != DriverAvailabilityStatus.Available)
+        {
+            DispatchPresenceExpiresAtUtc = null;
+        }
         if (availabilityStatus == DriverAvailabilityStatus.Offline)
         {
             ClearCurrentLocation();
         }
     }
+
+    /// <summary>
+    /// Marks that the driver's live dispatch screen is actively polling. The
+    /// short lease prevents an abandoned browser tab from receiving turns
+    /// indefinitely after its polling stops.
+    /// </summary>
+    public bool RefreshDispatchPresence(DateTimeOffset nowUtc)
+    {
+        if (Status != DriverStatus.Approved || AvailabilityStatus != DriverAvailabilityStatus.Available)
+        {
+            DispatchPresenceExpiresAtUtc = null;
+            return false;
+        }
+
+        if (DispatchPresenceExpiresAtUtc is DateTimeOffset expiresAtUtc &&
+            expiresAtUtc > nowUtc.AddSeconds(DispatchPresenceRefreshThresholdSeconds))
+        {
+            return false;
+        }
+
+        DispatchPresenceExpiresAtUtc = nowUtc.AddSeconds(DispatchPresenceLeaseSeconds);
+        return true;
+    }
+
+    public bool IsDispatchPresenceActiveAt(DateTimeOffset nowUtc) =>
+        Status == DriverStatus.Approved &&
+        AvailabilityStatus == DriverAvailabilityStatus.Available &&
+        DispatchPresenceExpiresAtUtc > nowUtc;
 
     /// <summary>
     /// Stores only the driver's latest location while the driver is actively serving.

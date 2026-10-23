@@ -218,6 +218,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId),
             TimeProvider.System);
 
+        StartPersonalTurn(request, driver);
         var offered = await service.AcceptAsync(driverUserId, request.Id);
 
         Assert.True(offered.IsSuccess);
@@ -263,6 +264,7 @@ public sealed class RideRequestServiceTests
             var offers = (List<RideDriverOffer>)offersField.GetValue(currentRequest)!;
             offers.RemoveAll(offer => offer.DriverProfileId == driver.Id);
             currentRequest.AddDriverOffer(Guid.NewGuid(), 8_500, DateTimeOffset.UtcNow);
+            currentRequest.StartDispatchTurn(driver.Id, DateTimeOffset.UtcNow);
         };
         var drivers = new InMemoryDriverRepository();
         drivers.Add(driver);
@@ -273,6 +275,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId),
             TimeProvider.System);
 
+        StartPersonalTurn(request, driver);
         var offered = await service.AcceptAsync(driverUserId, request.Id);
 
         Assert.True(offered.IsSuccess);
@@ -308,7 +311,7 @@ public sealed class RideRequestServiceTests
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
             var offers = (List<RideDriverOffer>)offersField.GetValue(currentRequest)!;
             offers.RemoveAll(offer => offer.DriverProfileId == driver.Id);
-            currentRequest.AddDriverOffer(Guid.NewGuid(), 8_500 + simulatedConcurrentUpdatesRemaining * 500, DateTimeOffset.UtcNow);
+            currentRequest.StartDispatchTurn(driver.Id, DateTimeOffset.UtcNow);
             simulatedConcurrentUpdatesRemaining--;
             if (simulatedConcurrentUpdatesRemaining > 0)
             {
@@ -324,6 +327,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId, driverUserId),
             TimeProvider.System);
 
+        StartPersonalTurn(request, driver);
         var submitted = await service.MakeCounterOfferAsync(
             driverUserId,
             request.Id,
@@ -337,7 +341,7 @@ public sealed class RideRequestServiceTests
     }
 
     [Fact]
-    public async Task Simultaneous_driver_offers_are_serialized_and_both_reach_customer_board()
+    public async Task Nearby_drivers_take_sequential_turns_and_both_reach_customer_board()
     {
         var customerUserId = Guid.NewGuid();
         var firstDriverUserId = Guid.NewGuid();
@@ -354,8 +358,10 @@ public sealed class RideRequestServiceTests
         var rides = new InMemoryRideRequestRepository();
         rides.Add(request);
         var drivers = new InMemoryDriverRepository();
-        drivers.Add(CreateAvailableDriver(firstDriverUserId, "BUC", VehicleType.Motorcycle));
-        drivers.Add(CreateAvailableDriver(secondDriverUserId, "BUC", VehicleType.Motorcycle));
+        var firstDriver = CreateAvailableDriver(firstDriverUserId, "BUC", VehicleType.Motorcycle);
+        var secondDriver = CreateAvailableDriver(secondDriverUserId, "BUC", VehicleType.Motorcycle);
+        drivers.Add(firstDriver);
+        drivers.Add(secondDriver);
         var service = new RideRequestService(
             rides,
             new InMemoryPricingRuleRepository(),
@@ -363,12 +369,20 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId, firstDriverUserId, secondDriverUserId),
             TimeProvider.System);
 
-        var results = await Task.WhenAll(
-            service.MakeCounterOfferAsync(firstDriverUserId, request.Id, new CreateCounterOfferCommand(6_200)),
-            service.MakeCounterOfferAsync(secondDriverUserId, request.Id, new CreateCounterOfferCommand(6_700)));
+        StartPersonalTurn(request, firstDriver);
+        var firstResult = await service.MakeCounterOfferAsync(
+            firstDriverUserId,
+            request.Id,
+            new CreateCounterOfferCommand(6_200));
+        StartPersonalTurn(request, secondDriver);
+        var secondResult = await service.MakeCounterOfferAsync(
+            secondDriverUserId,
+            request.Id,
+            new CreateCounterOfferCommand(6_700));
         var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
 
-        Assert.All(results, result => Assert.True(result.IsSuccess, result.Error));
+        Assert.True(firstResult.IsSuccess, firstResult.Error);
+        Assert.True(secondResult.IsSuccess, secondResult.Error);
         Assert.Equal([6_200, 6_700], board!.Offers.Select(offer => offer.OfferedPriceCop).Order().ToArray());
     }
 
@@ -389,7 +403,8 @@ public sealed class RideRequestServiceTests
         var rides = new InMemoryRideRequestRepository();
         rides.Add(request);
         var drivers = new InMemoryDriverRepository();
-        drivers.Add(CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle));
+        var driver = CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle);
+        drivers.Add(driver);
         var service = new RideRequestService(
             rides,
             new InMemoryPricingRuleRepository(),
@@ -397,6 +412,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId, driverUserId),
             TimeProvider.System);
 
+        StartPersonalTurn(request, driver);
         var results = await Task.WhenAll(
             service.MakeCounterOfferAsync(driverUserId, request.Id, new CreateCounterOfferCommand(6_200)),
             service.MakeCounterOfferAsync(driverUserId, request.Id, new CreateCounterOfferCommand(6_200)));
@@ -431,7 +447,8 @@ public sealed class RideRequestServiceTests
         var rides = new InMemoryRideRequestRepository();
         rides.Add(request);
         var drivers = new InMemoryDriverRepository();
-        drivers.Add(CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle));
+        var driver = CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle);
+        drivers.Add(driver);
         var service = new RideRequestService(
             rides,
             new InMemoryPricingRuleRepository(),
@@ -439,6 +456,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId, driverUserId),
             timeProvider);
 
+        request.StartDispatchTurn(driver.Id, requestedAt.AddSeconds(54));
         var submitted = await service.MakeCounterOfferAsync(
             driverUserId,
             request.Id,
@@ -477,6 +495,7 @@ public sealed class RideRequestServiceTests
             drivers,
             new ExistingUserDirectory(customerUserId, driverUserId),
             TimeProvider.System);
+        StartPersonalTurn(request, driver);
         Assert.True((await service.AcceptAsync(driverUserId, request.Id)).IsSuccess);
         var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
         var offerId = Assert.Single(board!.Offers).Id;
@@ -506,7 +525,8 @@ public sealed class RideRequestServiceTests
         var rides = new InMemoryRideRequestRepository();
         rides.Add(request);
         var drivers = new InMemoryDriverRepository();
-        drivers.Add(CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle));
+        var driver = CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle);
+        drivers.Add(driver);
         var notifier = new RecordingRideRealtimeNotifier();
         var service = new RideRequestService(
             rides,
@@ -516,6 +536,7 @@ public sealed class RideRequestServiceTests
             TimeProvider.System,
             notifier);
 
+        StartPersonalTurn(request, driver);
         var offered = await service.AcceptAsync(driverUserId, request.Id);
 
         Assert.True(offered.IsSuccess);
@@ -666,6 +687,157 @@ public sealed class RideRequestServiceTests
     }
 
     [Fact]
+    public async Task New_dispatch_turns_are_reserved_only_for_drivers_with_a_live_dispatch_panel()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var customerUserId = Guid.NewGuid();
+        var activeDriverUserId = Guid.NewGuid();
+        var inactiveDriverUserId = Guid.NewGuid();
+        var request = new RideRequest(
+            customerUserId,
+            "Carrera 33 # 48-16, Bucaramanga",
+            "Calle 56 # 27-45, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            6_000,
+            3_500,
+            7.1210m,
+            -73.1200m,
+            7.1300m,
+            -73.1100m,
+            now);
+        var rideRepository = new InMemoryRideRequestRepository();
+        rideRepository.Add(request);
+
+        var activeDriver = CreateAvailableDriver(activeDriverUserId, "BUC", VehicleType.Motorcycle);
+        activeDriver.UpdateCurrentLocation(7.1193m, -73.1227m, now);
+        var inactiveDriver = CreateAvailableDriver(inactiveDriverUserId, "BUC", VehicleType.Motorcycle);
+        inactiveDriver.SetAvailability(DriverAvailabilityStatus.Offline);
+        inactiveDriver.SetAvailability(DriverAvailabilityStatus.Available);
+        inactiveDriver.UpdateCurrentLocation(7.1208m, -73.1201m, now);
+        var driverRepository = new InMemoryDriverRepository();
+        driverRepository.Add(activeDriver);
+        driverRepository.Add(inactiveDriver);
+        var service = new RideRequestService(
+            rideRepository,
+            new InMemoryPricingRuleRepository(),
+            driverRepository,
+            new ExistingUserDirectory(customerUserId),
+            new AdjustableTimeProvider(now));
+
+        var offers = await service.ListAvailableForDriverAsync(activeDriverUserId, 3m);
+
+        Assert.Single(offers);
+        var dispatchTurn = Assert.Single(request.DriverOffers, offer => !offer.HasResponded);
+        Assert.Equal(activeDriver.Id, dispatchTurn.DriverProfileId);
+        Assert.NotNull(inactiveDriver.LastKnownLatitude);
+        Assert.Null(inactiveDriver.DispatchPresenceExpiresAtUtc);
+    }
+
+    [Fact]
+    public async Task Expired_ten_second_turn_moves_to_next_driver_and_restarts_after_one_minute()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var customerUserId = Guid.NewGuid();
+        var firstDriverUserId = Guid.NewGuid();
+        var secondDriverUserId = Guid.NewGuid();
+        var request = new RideRequest(
+            customerUserId,
+            "Carrera 33 # 48-16, Bucaramanga",
+            "Calle 56 # 27-45, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            6_000,
+            3_500,
+            7.1210m,
+            -73.1200m,
+            7.1300m,
+            -73.1100m,
+            now);
+        var rideRepository = new InMemoryRideRequestRepository();
+        rideRepository.Add(request);
+
+        var firstDriver = CreateAvailableDriver(firstDriverUserId, "BUC", VehicleType.Motorcycle);
+        firstDriver.UpdateCurrentLocation(7.1209m, -73.1200m, now);
+        var secondDriver = CreateAvailableDriver(secondDriverUserId, "BUC", VehicleType.Motorcycle);
+        secondDriver.UpdateCurrentLocation(7.1193m, -73.1227m, now);
+        var driverRepository = new InMemoryDriverRepository();
+        driverRepository.Add(firstDriver);
+        driverRepository.Add(secondDriver);
+        var timeProvider = new AdjustableTimeProvider(now);
+        var service = new RideRequestService(
+            rideRepository,
+            new InMemoryPricingRuleRepository(),
+            driverRepository,
+            new ExistingUserDirectory(customerUserId),
+            timeProvider);
+
+        var firstInbox = await service.ListAvailableForDriverAsync(firstDriverUserId, 3m);
+        var firstTurn = Assert.Single(request.DriverOffers, offer => !offer.HasResponded);
+        Assert.Contains(firstInbox, offer => offer.HasPersonalDispatchTurn);
+        Assert.Equal(firstDriver.Id, firstTurn.DriverProfileId);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(RideRequest.PersonalDispatchWindowSeconds));
+        var secondInbox = await service.ListAvailableForDriverAsync(secondDriverUserId, 3m);
+        var secondTurn = Assert.Single(request.DriverOffers, offer =>
+            !offer.HasResponded && offer.IsPendingAt(timeProvider.GetUtcNow()));
+        Assert.Contains(secondInbox, offer => offer.HasPersonalDispatchTurn);
+        Assert.Equal(secondDriver.Id, secondTurn.DriverProfileId);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(RideRequest.OfferCollectionWindowSeconds - RideRequest.PersonalDispatchWindowSeconds));
+        await service.ListAvailableForDriverAsync(firstDriverUserId, 3m);
+        var nextRoundTurn = Assert.Single(request.DriverOffers, offer =>
+            !offer.HasResponded && offer.IsPendingAt(timeProvider.GetUtcNow()));
+
+        Assert.Equal(2, request.OfferSearchRound);
+        Assert.Equal(firstDriver.Id, nextRoundTurn.DriverProfileId);
+        Assert.Equal(2, nextRoundTurn.SearchRound);
+    }
+
+    [Fact]
+    public async Task Driver_offer_stays_selectable_after_driver_disconnects_dispatch()
+    {
+        var customerUserId = Guid.NewGuid();
+        var driverUserId = Guid.NewGuid();
+        var request = new RideRequest(
+            customerUserId,
+            "Calle 72 # 10-07, Bucaramanga",
+            "Aeropuerto Palonegro, Bucaramanga",
+            "BUC",
+            RideServiceType.Motorcycle,
+            5_700,
+            3_500,
+            DateTimeOffset.UtcNow);
+        var rideRepository = new InMemoryRideRequestRepository();
+        rideRepository.Add(request);
+        var driver = CreateAvailableDriver(driverUserId, "BUC", VehicleType.Motorcycle);
+        var driverRepository = new InMemoryDriverRepository();
+        driverRepository.Add(driver);
+        var service = new RideRequestService(
+            rideRepository,
+            new InMemoryPricingRuleRepository(),
+            driverRepository,
+            new ExistingUserDirectory(customerUserId),
+            TimeProvider.System);
+        StartPersonalTurn(request, driver);
+
+        var submitted = await service.MakeCounterOfferAsync(
+            driverUserId,
+            request.Id,
+            new CreateCounterOfferCommand(6_200));
+        driver.SetAvailability(DriverAvailabilityStatus.Offline);
+        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
+
+        Assert.True(submitted.IsSuccess, submitted.Error);
+        var offer = Assert.Single(board!.Offers);
+        var selected = await service.SelectDriverOfferAsync(customerUserId, request.Id, offer.Id);
+
+        Assert.True(selected.IsSuccess, selected.Error);
+        Assert.Equal(RideRequestStatus.Accepted, request.Status);
+        Assert.Equal(DriverAvailabilityStatus.Busy, driver.AvailabilityStatus);
+    }
+
+    [Fact]
     public async Task Location_aware_offer_includes_a_distance_only_price_reference_from_the_active_rule()
     {
         var driverUserId = Guid.NewGuid();
@@ -731,7 +903,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId, driverUserId),
             TimeProvider.System);
 
-        var accepted = await SendOfferAndSelectAsync(service, customerUserId, driverUserId, request.Id);
+        var accepted = await SendOfferAndSelectAsync(request, driver, service, customerUserId, driverUserId);
         driver.UpdateCurrentLocation(7.1222m, -73.1211m, DateTimeOffset.UtcNow);
         var tracking = await service.GetTrackingForCustomerAsync(customerUserId, request.Id);
         var otherCustomerTracking = await service.GetTrackingForCustomerAsync(Guid.NewGuid(), request.Id);
@@ -788,7 +960,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(Guid.NewGuid()),
             TimeProvider.System);
 
-        await SendOfferAndSelectAsync(service, request.CustomerUserId, driverUserId, request.Id);
+        await SendOfferAndSelectAsync(request, driver, service, request.CustomerUserId, driverUserId);
         var enRoute = await service.MarkDriverEnRouteAsync(driverUserId, request.Id);
         var arrived = await service.MarkDriverArrivedAsync(driverUserId, request.Id);
         var started = await service.StartAsync(driverUserId, request.Id);
@@ -858,12 +1030,12 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(Guid.NewGuid()),
             TimeProvider.System);
 
-        await SendOfferAndSelectAsync(service, completedRequest.CustomerUserId, driverUserId, completedRequest.Id);
+        await SendOfferAndSelectAsync(completedRequest, driver, service, completedRequest.CustomerUserId, driverUserId);
         await service.MarkDriverEnRouteAsync(driverUserId, completedRequest.Id);
         await service.MarkDriverArrivedAsync(driverUserId, completedRequest.Id);
         await service.StartAsync(driverUserId, completedRequest.Id);
         await service.CompleteAsync(driverUserId, completedRequest.Id);
-        await SendOfferAndSelectAsync(service, nequiCompletedRequest.CustomerUserId, driverUserId, nequiCompletedRequest.Id);
+        await SendOfferAndSelectAsync(nequiCompletedRequest, driver, service, nequiCompletedRequest.CustomerUserId, driverUserId);
         await service.MarkDriverEnRouteAsync(driverUserId, nequiCompletedRequest.Id);
         await service.MarkDriverArrivedAsync(driverUserId, nequiCompletedRequest.Id);
         await service.StartAsync(driverUserId, nequiCompletedRequest.Id);
@@ -910,7 +1082,9 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId),
             TimeProvider.System);
 
+        StartPersonalTurn(request, firstDriver);
         var firstOffer = await service.MakeCounterOfferAsync(firstDriverUserId, request.Id, new CreateCounterOfferCommand(4_200));
+        StartPersonalTurn(request, preferredDriver);
         var preferredOffer = await service.MakeCounterOfferAsync(preferredDriverUserId, request.Id, new CreateCounterOfferCommand(4_700));
         var board = await service.GetDriverOffersForCustomerAsync(customerUserId, request.Id);
 
@@ -967,6 +1141,7 @@ public sealed class RideRequestServiceTests
             new ExistingUserDirectory(customerUserId),
             TimeProvider.System);
 
+        StartPersonalTurn(request, driver);
         var firstOffer = await service.MakeCounterOfferAsync(driverUserId, request.Id, new CreateCounterOfferCommand(4_200));
         var secondOffer = await service.MakeCounterOfferAsync(driverUserId, anotherRequest.Id, new CreateCounterOfferCommand(4_200));
         var pendingOffer = await service.GetPendingOfferForDriverAsync(driverUserId);
@@ -982,17 +1157,19 @@ public sealed class RideRequestServiceTests
     }
 
     private static async Task<ApplicationResult<RideRequestDto>> SendOfferAndSelectAsync(
+        RideRequest rideRequest,
+        DriverProfile driver,
         RideRequestService service,
         Guid customerUserId,
-        Guid driverUserId,
-        Guid rideRequestId)
+        Guid driverUserId)
     {
-        var offered = await service.AcceptAsync(driverUserId, rideRequestId);
+        StartPersonalTurn(rideRequest, driver);
+        var offered = await service.AcceptAsync(driverUserId, rideRequest.Id);
         Assert.True(offered.IsSuccess);
 
-        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, rideRequestId);
+        var board = await service.GetDriverOffersForCustomerAsync(customerUserId, rideRequest.Id);
         var offer = Assert.Single(board!.Offers);
-        var selected = await service.SelectDriverOfferAsync(customerUserId, rideRequestId, offer.Id);
+        var selected = await service.SelectDriverOfferAsync(customerUserId, rideRequest.Id, offer.Id);
         Assert.True(selected.IsSuccess);
         return selected;
     }
@@ -1195,8 +1372,17 @@ public sealed class RideRequestServiceTests
             GetByIdAsync(driverProfileId, cancellationToken);
         public Task<DriverProfile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_drivers.SingleOrDefault(driver => driver.UserId == userId));
-        public Task<DriverProfilePage> ListAsync(DriverStatus? status, int skip, int take, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new DriverProfilePage([], 0));
+        public Task<DriverProfilePage> ListAsync(DriverStatus? status, int skip, int take, CancellationToken cancellationToken = default)
+        {
+            var query = _drivers.AsEnumerable();
+            if (status is not null)
+            {
+                query = query.Where(driver => driver.Status == status);
+            }
+
+            var items = query.OrderBy(driver => driver.Id).ToArray();
+            return Task.FromResult(new DriverProfilePage(items.Skip(skip).Take(take).ToArray(), items.Length));
+        }
         public Task<bool> IsVehiclePlateInUseAsync(string plate, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task SaveChangesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
@@ -1220,8 +1406,12 @@ public sealed class RideRequestServiceTests
         }
         driver.Approve(null, now);
         driver.SetAvailability(DriverAvailabilityStatus.Available);
+        driver.RefreshDispatchPresence(now);
         return driver;
     }
+
+    private static void StartPersonalTurn(RideRequest request, DriverProfile driver) =>
+        request.StartDispatchTurn(driver.Id, DateTimeOffset.UtcNow);
 
     private sealed class InMemoryPricingRuleRepository : IPricingRuleRepository
     {

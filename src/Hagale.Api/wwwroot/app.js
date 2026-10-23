@@ -56,6 +56,7 @@ const state = {
   driverPendingRideOffer: null,
   lastDriverJourneyVoiceKey: null,
   driverPendingOfferCountdownTimer: null,
+  driverDispatchCountdownTimer: null,
   driverCompletedRideRequests: [],
   driverActivitySummary: null,
   rideRatings: {},
@@ -84,6 +85,7 @@ const state = {
   driverOfferSubmissionIds: new Set(),
   driverOfferSubmissionVersion: 0,
   dispatchPollingTimer: null,
+  dispatchPollingInProgress: false,
   driverMap: null,
   customerRideMap: null,
   rideMapPickerTarget: "pickup",
@@ -752,9 +754,14 @@ function isDriverAcceptanceCommand(value) {
     || /\b(?:enviar|envia|envio|mando|mandar)\s+(?:la\s+)?oferta\b/.test(command);
 }
 
+function isDriverSkipCommand(value) {
+  const command = normalizeVoiceCommand(value);
+  return /\b(?:omitir|pasar|no aceptar)\b/.test(command);
+}
+
 function startDriverVoiceAcceptance(offer) {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!offer || !Recognition || !state.driverVoiceAlertsEnabled || !state.driverAlertsUnlocked) return;
+  if (!offer?.hasPersonalDispatchTurn || !Recognition || !state.driverVoiceAlertsEnabled || !state.driverAlertsUnlocked) return;
   stopDriverVoiceAcceptance();
   const token = state.driverVoiceRecognitionToken;
   const recognition = new Recognition();
@@ -767,11 +774,14 @@ function startDriverVoiceAcceptance(offer) {
   recognition.onresult = event => {
     const alternatives = [...(event.results?.[0] || [])].map(result => result.transcript);
     const accepted = alternatives.some(isDriverAcceptanceCommand);
+    const skipped = alternatives.some(isDriverSkipCommand);
     stopDriverVoiceAcceptance();
     if (accepted) {
       void acceptRideRequest(offer.id, "voice");
+    } else if (skipped) {
+      void skipDriverDispatchTurn(offer.id);
     } else {
-      showNotice("No se reconoció la orden. Di: ENVIAR OFERTA o ACEPTO EL SERVICIO.", true);
+      showNotice("No se reconoció la orden. Di: ENVIAR OFERTA u OMITIR.", true);
     }
   };
   recognition.onerror = event => {
@@ -787,11 +797,12 @@ function startDriverVoiceAcceptance(offer) {
   };
   try {
     recognition.start();
+    const remainingMs = Math.max(0, new Date(offer.personalDispatchExpiresAtUtc).getTime() - Date.now());
     state.driverVoiceRecognitionTimer = window.setTimeout(() => {
       stopDriverVoiceAcceptance();
-      showNotice("La ventana de voz terminó. El servicio sigue disponible para otros conductores.");
-    }, 8_000);
-    showNotice("Di: ENVIAR OFERTA o ACEPTO EL SERVICIO. Escuchando durante 8 segundos.", false, true);
+      void refreshDriverDispatch({ announceNewOffers: true }).catch(() => {});
+    }, Math.min(8_000, remainingMs));
+    showNotice("Di: ENVIAR OFERTA u OMITIR. El turno dura 10 segundos.", false, true);
   } catch {
     stopDriverVoiceAcceptance();
   }
@@ -890,11 +901,11 @@ function buildDriverOfferVoiceMessage(offer) {
 }
 
 function notifyDriverNewOffers(newOffers) {
-  const offers = Array.isArray(newOffers) ? newOffers : [];
+  const offers = (Array.isArray(newOffers) ? newOffers : []).filter(offer => offer.hasPersonalDispatchTurn);
   const newOfferCount = offers.length || Number(newOffers) || 0;
   const message = newOfferCount === 1
-    ? buildDriverOfferVoiceMessage(offers[0])
-    : `Tienes ${newOfferCount} nuevos servicios cerca. Abre solicitudes para ver precios y destinos.`;
+    ? `Nuevo servicio cercano. El pasajero ofrece ${formatCopForVoice(offers[0].proposedPriceCop)}. Tienes diez segundos para enviar esta tarifa, proponer otra u omitir.`
+    : `Tienes ${newOfferCount} turnos personales de servicio. Abre solicitudes para responder en diez segundos.`;
   const now = Date.now();
   if (now - state.lastDriverOfferAlertAt < 3_500) return;
   state.lastDriverOfferAlertAt = now;
@@ -910,7 +921,8 @@ function notifyDriverNewOffers(newOffers) {
     };
     if (utterance) {
       utterance.onend = startRecognition;
-      window.setTimeout(startRecognition, 12_000);
+      const remainingMs = Math.max(0, new Date(offers[0].personalDispatchExpiresAtUtc).getTime() - Date.now());
+      window.setTimeout(startRecognition, Math.min(4_500, Math.max(0, remainingMs - 1_000)));
     } else {
       window.setTimeout(startRecognition, 900);
     }
@@ -1141,16 +1153,47 @@ function getDispatchOffersUrl() {
   return `/driver/ride-requests/available?maximumPickupDistanceKilometers=${encodeURIComponent(state.dispatchRadiusKilometers)}`;
 }
 
-async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
-  if (!state.profile?.roles.includes("Driver")) return;
+async function refreshDriverDispatch({ announceNewOffers = false, dispatchOnly = false } = {}) {
+  if (!state.profile?.roles.includes("Driver") || state.activeMode !== "Driver") return;
 
   const refreshSubmissionVersion = state.driverOfferSubmissionVersion;
-  const previousIds = new Set((state.driverRideOffers || []).map(offer => offer.id));
+  const previousOffers = state.driverRideOffers || [];
+  const previousIds = new Set(previousOffers.map(offer => offer.id));
+  const previousPersonalDispatchIds = new Set(previousOffers
+    .filter(offer => offer.hasPersonalDispatchTurn)
+    .map(offer => offer.id));
   const previousCurrentRideId = state.driverCurrentRideRequest?.id || null;
   const previousCurrentRideStatus = state.driverCurrentRideRequest?.status || null;
   const previousPendingOfferId = state.driverPendingRideOffer?.pendingDriverOfferId || null;
+  const offersPromise = request(getDispatchOffersUrl());
+  if (dispatchOnly) {
+    const offers = await offersPromise;
+    if (refreshSubmissionVersion !== state.driverOfferSubmissionVersion) {
+      return { offerSetChanged: false, newOfferCount: 0 };
+    }
+    state.driverRideOffers = offers;
+    if (state.selectedDriverOfferId && !offers.some(offer => offer.id === state.selectedDriverOfferId)) {
+      state.selectedDriverOfferId = null;
+    }
+    const newOffers = announceNewOffers
+      ? offers.filter(offer => offer.hasPersonalDispatchTurn && !previousPersonalDispatchIds.has(offer.id))
+      : [];
+    const offerSetChanged = offers.length !== previousIds.size
+      || offers.some(offer => !previousIds.has(offer.id))
+      || offers.some(offer => offer.hasPersonalDispatchTurn !== previousPersonalDispatchIds.has(offer.id));
+    if (offerSetChanged) {
+      const activePersonalTurn = offers.find(offer => offer.hasPersonalDispatchTurn);
+      if (activePersonalTurn && !state.selectedDriverOfferId) {
+        state.selectedDriverOfferId = activePersonalTurn.id;
+      }
+      renderDashboard();
+    }
+    if (newOffers.length) notifyDriverNewOffers(newOffers);
+    return { offerSetChanged, newOfferCount: newOffers.length };
+  }
+
   const [offers, currentRequest, pendingOffer, application, activitySummary, completedRequests] = await Promise.all([
-    request(getDispatchOffersUrl()),
+    offersPromise,
     request("/driver/ride-requests/current"),
     request("/driver/ride-requests/pending-offer"),
     request("/driver-application/me"),
@@ -1175,15 +1218,21 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
   }
 
   const newOffers = announceNewOffers
-    ? offers.filter(offer => !previousIds.has(offer.id))
+    ? offers.filter(offer => offer.hasPersonalDispatchTurn && !previousPersonalDispatchIds.has(offer.id))
     : [];
   const newOfferCount = newOffers.length;
-  const offerSetChanged = offers.length !== previousIds.size || offers.some(offer => !previousIds.has(offer.id));
+  const offerSetChanged = offers.length !== previousIds.size
+    || offers.some(offer => !previousIds.has(offer.id))
+    || offers.some(offer => offer.hasPersonalDispatchTurn !== previousPersonalDispatchIds.has(offer.id));
   const currentRideChanged = currentRequest?.id !== previousCurrentRideId
     || currentRequest?.status !== previousCurrentRideStatus;
   const pendingOfferChanged = pendingOffer?.pendingDriverOfferId !== previousPendingOfferId;
 
   if (offerSetChanged || currentRideChanged || pendingOfferChanged) {
+    const activePersonalTurn = offers.find(offer => offer.hasPersonalDispatchTurn);
+    if (activePersonalTurn && !state.selectedDriverOfferId) {
+      state.selectedDriverOfferId = activePersonalTurn.id;
+    }
     renderDashboard();
   }
   if (newOfferCount > 0) {
@@ -1204,17 +1253,26 @@ async function refreshDriverDispatch({ announceNewOffers = false } = {}) {
 }
 
 function syncDispatchPolling(isDriverMode, driver) {
-  window.clearInterval(state.dispatchPollingTimer);
-  state.dispatchPollingTimer = null;
-  if (!isDriverMode || driver?.availabilityStatus !== "Available") return;
+  const shouldPoll = isDriverMode && driver?.availabilityStatus === "Available";
+  if (!shouldPoll) {
+    window.clearInterval(state.dispatchPollingTimer);
+    state.dispatchPollingTimer = null;
+    state.dispatchPollingInProgress = false;
+    return;
+  }
+  if (state.dispatchPollingTimer) return;
 
   state.dispatchPollingTimer = window.setInterval(async () => {
+    if (state.dispatchPollingInProgress) return;
+    state.dispatchPollingInProgress = true;
     try {
-      await refreshDriverDispatch({ announceNewOffers: true });
+      await refreshDriverDispatch({ announceNewOffers: true, dispatchOnly: true });
     } catch {
       // The next manual update will show any recoverable connectivity problem.
+    } finally {
+      state.dispatchPollingInProgress = false;
     }
-  }, 20_000);
+  }, 2_000);
 }
 
 // Canal privado en tiempo real. Los avisos del hub no incluyen datos de viaje:
@@ -2013,7 +2071,7 @@ function updateCustomerOfferCountdownUi() {
   const total = 60;
   const percent = Math.max(0, Math.min(100, Math.round((remaining / total) * 100)));
   countdown.textContent = remaining > 0
-    ? `${remaining} s para elegir`
+    ? `${remaining} s de esta ronda`
     : "Ronda finalizada";
   progress.style.width = `${percent}%`;
   return remaining > 0 && Boolean(board.isWindowOpen);
@@ -2060,6 +2118,31 @@ function syncDriverPendingOfferCountdown() {
       // La actualización automática se reintentará con el siguiente ciclo.
     });
   }, 1_000);
+}
+
+function updateDriverDispatchCountdownUi() {
+  const activeTurn = (state.driverRideOffers || []).find(offer => offer.hasPersonalDispatchTurn);
+  if (!activeTurn) return false;
+
+  const countdown = app.querySelector("[data-driver-dispatch-countdown]");
+  const progress = app.querySelector("[data-driver-dispatch-progress]");
+  const remaining = getOfferSecondsRemaining(activeTurn.personalDispatchExpiresAtUtc);
+  if (countdown) countdown.textContent = remaining > 0 ? `${remaining} s para responder` : "Turno terminado";
+  if (progress) progress.style.width = `${Math.max(0, Math.min(100, Math.round((remaining / 10) * 100)))}%`;
+  return remaining > 0;
+}
+
+function syncDriverDispatchCountdown() {
+  window.clearInterval(state.driverDispatchCountdownTimer);
+  state.driverDispatchCountdownTimer = null;
+  if (!updateDriverDispatchCountdownUi()) return;
+
+  state.driverDispatchCountdownTimer = window.setInterval(() => {
+    if (updateDriverDispatchCountdownUi()) return;
+    window.clearInterval(state.driverDispatchCountdownTimer);
+    state.driverDispatchCountdownTimer = null;
+    void refreshDriverDispatch({ announceNewOffers: true }).catch(() => {});
+  }, 250);
 }
 
 function getRideSortTime(rideRequest) {
@@ -3751,6 +3834,10 @@ async function authenticate(path, data) {
 
 async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
   try {
+    const previousPersonalDispatchIds = new Set((state.driverRideOffers || [])
+      .filter(offer => offer.hasPersonalDispatchTurn)
+      .map(offer => offer.id));
+    let newlyAssignedPersonalTurns = [];
     state.profile = await request("/profile/me");
     // El perfil consulta los roles vigentes. Si administración acaba de
     // aprobar una cuenta, el JWT previo aún no los contiene; se actualiza una
@@ -3778,6 +3865,15 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
       throw applicationError;
     }
     state.application = application;
+    if (state.profile.roles.includes("Driver")
+      && state.activeMode !== "Driver"
+      && state.application?.availabilityStatus === "Available") {
+      state.application = await request("/driver-application/availability", {
+        method: "PATCH",
+        data: { availabilityStatus: "Offline" }
+      });
+      stopDriverLocationTracking();
+    }
     state.rideRequests = rideRequests;
     const pendingCustomerRide = state.profile.roles.includes("Customer")
       ? getOpenCustomerRideRequest()
@@ -3794,17 +3890,30 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
     }
     if (state.profile.roles.includes("Driver")) {
       const [driverRideOffers, driverCurrentRideRequest, driverPendingRideOffer, driverActivitySummary, driverCompletedRideRequests] = await Promise.all([
-        request(getDispatchOffersUrl()),
+        state.activeMode === "Driver" && state.application?.availabilityStatus === "Available"
+          ? request(getDispatchOffersUrl())
+          : Promise.resolve([]),
         request("/driver/ride-requests/current"),
         request("/driver/ride-requests/pending-offer"),
         request("/driver/ride-requests/activity-summary"),
         request("/driver/ride-requests/completed")
       ]);
       state.driverRideOffers = driverRideOffers;
+      newlyAssignedPersonalTurns = state.activeMode === "Driver"
+        && state.application?.availabilityStatus === "Available"
+        ? driverRideOffers.filter(offer => offer.hasPersonalDispatchTurn && !previousPersonalDispatchIds.has(offer.id))
+        : [];
+      if (newlyAssignedPersonalTurns.length && !state.selectedDriverOfferId) {
+        state.selectedDriverOfferId = newlyAssignedPersonalTurns[0].id;
+      }
       state.driverCurrentRideRequest = driverCurrentRideRequest;
       state.driverPendingRideOffer = driverPendingRideOffer;
       state.driverActivitySummary = driverActivitySummary;
       state.driverCompletedRideRequests = driverCompletedRideRequests;
+      if (hasActiveDriverJourney() && state.activeMode !== "Driver") {
+        state.activeMode = "Driver";
+        sessionStorage.setItem(modeKey, state.activeMode);
+      }
     } else {
       state.driverRideOffers = [];
       state.driverCurrentRideRequest = null;
@@ -3837,6 +3946,9 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
       sessionStorage.setItem(accountSplashSessionKey, "true");
     }
     renderDashboard();
+    if (newlyAssignedPersonalTurns.length) {
+      notifyDriverNewOffers(newlyAssignedPersonalTurns);
+    }
     void resumeGrantedDriverLocationTracking();
   } catch (error) {
     showNotice(error.message, true);
@@ -4160,6 +4272,7 @@ function renderDashboard() {
   syncCustomerTrackingPolling(!isDriverMode && profile.roles.includes("Customer"));
   syncCustomerOfferCountdown();
   syncDriverPendingOfferCountdown();
+  syncDriverDispatchCountdown();
   syncRideRealtime();
   mountDriverMap();
   mountCustomerTrackingMap();
@@ -4287,9 +4400,43 @@ function renderDriverDispatchPanel(driver) {
     </article>`;
 }
 
-function setActiveMode(mode) {
+async function setActiveMode(mode) {
   if (mode === "Driver" && !state.profile?.roles.includes("Driver")) return;
-  state.activeMode = mode === "Driver" ? "Driver" : "Customer";
+  const nextMode = mode === "Driver" ? "Driver" : "Customer";
+  if (nextMode === state.activeMode) return;
+  if (nextMode === "Customer" && hasActiveDriverJourney()) {
+    showNotice("Finaliza el viaje activo antes de salir del panel conductor.", true);
+    return;
+  }
+
+  const activePersonalTurn = nextMode === "Customer"
+    ? state.driverRideOffers?.find(offer => offer.hasPersonalDispatchTurn)
+    : null;
+  if (nextMode === "Customer" && state.application?.availabilityStatus === "Available") {
+    try {
+      state.application = await request("/driver-application/availability", {
+        method: "PATCH",
+        data: { availabilityStatus: "Offline" }
+      });
+      state.activeMode = "Customer";
+      sessionStorage.setItem(modeKey, state.activeMode);
+      syncDispatchPolling(false, state.application);
+      stopDriverVoiceAcceptance();
+      stopDriverLocationTracking();
+      if (activePersonalTurn?.id) {
+        await request(`/driver/ride-requests/${activePersonalTurn.id}/skip`, {
+          method: "POST",
+          data: {}
+        }).catch(() => {});
+      }
+      state.driverRideOffers = [];
+    } catch (error) {
+      showNotice(`No pude desconectarte del despacho: ${error.message}`, true);
+      return;
+    }
+  }
+
+  state.activeMode = nextMode;
   sessionStorage.setItem(modeKey, state.activeMode);
   if (state.activeMode === "Driver" && !state.driverNav) {
     state.driverNav = "requests";
@@ -4300,7 +4447,7 @@ function setActiveMode(mode) {
   }
   renderDashboard();
   if (state.activeMode === "Driver") {
-    refreshDriverDispatch()
+    refreshDriverDispatch({ announceNewOffers: true })
       .then(() => renderDashboard())
       .catch(error => showNotice(error.message, true));
   }
@@ -4517,30 +4664,30 @@ function renderDriverRideRequestsPanel() {
   const offers = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id));
   const selectedOffer = offers.find(offer => offer.id === state.selectedDriverOfferId);
   const availabilityNotice = state.application?.availabilityStatus === "Available"
-    ? "Las solicitudes nuevas se ordenan por cercanía. Toca una para ver el mapa y decidir."
+    ? "La solicitud se ofrece primero al conductor cercano. Si no responde en 10 segundos, pasa al siguiente."
     : "Activa tu disponibilidad desde el panel lateral para comenzar a recibir solicitudes.";
   const offerList = offers.length
     ? offers.map(offer => `
-      <li class="driver-request-row ${offer.id === state.selectedDriverOfferId ? "is-selected" : ""}" data-view-driver-offer="${offer.id}" tabindex="0" role="button" aria-label="Ver solicitud de ${escapeHtml(offer.pickupAddress)}">
+      <li class="driver-request-row ${offer.id === state.selectedDriverOfferId ? "is-selected" : ""} ${offer.hasPersonalDispatchTurn ? "has-personal-dispatch-turn" : ""}" data-view-driver-offer="${offer.id}" tabindex="0" role="button" aria-label="Ver solicitud de ${escapeHtml(offer.pickupAddress)}">
         <div class="driver-request-priceblock">
           <span>Nueva solicitud</span>
           <strong class="driver-request-price">${formatCop(offer.proposedPriceCop)}</strong>
           <small>${escapeHtml(getRidePaymentMethodLabel(offer))}</small>
         </div>
         <div class="driver-request-main">
-          <div class="driver-request-top"><span class="driver-request-distance">${formatPickupProximity(offer.pickupDistanceKilometers)}</span><span class="driver-request-pulse">Toca para ver detalles</span></div>
+          <div class="driver-request-top"><span class="driver-request-distance">${formatPickupProximity(offer.pickupDistanceKilometers)}</span><span class="driver-request-pulse">${offer.hasPersonalDispatchTurn ? "TU TURNO · 10 s" : "Esperando turno"}</span></div>
           <h3>${escapeHtml(offer.pickupAddress)}</h3>
           <p>${escapeHtml(offer.destinationAddress)}</p>
           <div class="driver-request-tags"><span>${escapeHtml(label[offer.serviceType] || offer.serviceType)}</span><span>${escapeHtml(offer.operatingCityCode)}</span>${ridePreferenceTagSpans(offer)}${offer.pickupDistanceKilometers === null || offer.pickupDistanceKilometers === undefined ? '<span>Sin GPS del pasajero</span>' : ""}</div>
         </div>
-        <button class="driver-request-more" type="button" data-dismiss-offer="${offer.id}" aria-label="Ocultar solicitud">⋮</button>
+        ${offer.hasPersonalDispatchTurn ? "" : `<button class="driver-request-more" type="button" data-dismiss-offer="${offer.id}" aria-label="Ocultar solicitud">⋮</button>`}
       </li>`).join("")
     : `<li class="dispatch-empty"><span class="dispatch-empty-icon" aria-hidden="true">⌁</span><strong>${state.application?.availabilityStatus === "Available" ? "Buscando servicios cerca de ti" : "El despacho está desconectado"}</strong><p>${state.application?.availabilityStatus === "Available" ? "Cuando un pasajero solicite una moto compatible en tu zona, aparecerá aquí." : "Activa tu disponibilidad para empezar a recibir solicitudes."}</p></li>`;
 
   return `
     <article id="driver-requests" class="driver-offers-card driver-request-inbox" data-reveal>
       <div class="section-title driver-request-inbox-heading"><div><span class="eyebrow">Bandeja de despacho</span><h2>Solicitudes de viaje</h2><p class="muted">${availabilityNotice}</p></div><span class="offer-counter" aria-label="${offers.length} ${offers.length === 1 ? "solicitud" : "solicitudes"}"><strong>${offers.length}</strong><small>${offers.length === 1 ? "solicitud" : "solicitudes"}</small></span></div>
-      ${state.application?.availabilityStatus === "Available" ? '<p class="dispatch-live-note"><span aria-hidden="true"></span>Despacho activo · se actualiza automáticamente cada 20 segundos</p>' : ""}
+      ${state.application?.availabilityStatus === "Available" ? '<p class="dispatch-live-note"><span aria-hidden="true"></span>Turnos personales · actualización automática</p>' : ""}
       ${selectedOffer ? renderDriverOfferSheet(selectedOffer) : ""}
       <ul class="driver-request-list">${offerList}</ul>
     </article>`;
@@ -4584,6 +4731,20 @@ function renderDriverOfferSheet(offer) {
     <button class="button driver-quick-counter-offer" type="button" data-quick-counter-offer="${escapeHtml(offer.id)}" data-counter-offer-price="${price}">
       <span>Enviar</span><strong>${formatCop(price)}</strong>
     </button>`).join("");
+  const dispatchActions = offer.hasPersonalDispatchTurn
+    ? `<div class="driver-personal-turn" role="timer" aria-live="polite"><strong data-driver-dispatch-countdown>10 s para responder</strong><div class="driver-pending-offer-timer-bar"><i data-driver-dispatch-progress></i></div></div>
+      <div class="driver-offer-action-stack">
+        <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}"><span>Aceptar tarifa del cliente</span><strong>${formatCop(offer.proposedPriceCop)}</strong></button>
+        <p class="small-text driver-offer-accept-note">Aceptar envía tu propuesta; el cliente decide si te asigna el viaje.</p>
+        <div class="driver-counter-sheet" aria-label="Contraofertas rápidas">
+          <label>Propuestas rápidas · máximo ${formatCop(maximumDriverFare)} (hasta +100 % de la tarifa justa)</label>
+          ${counterOfferButtons
+            ? `<div class="driver-counter-options">${counterOfferButtons}</div>`
+            : '<p class="small-text">La tarifa solicitada ya está en el máximo permitido; puedes enviarla tal como está.</p>'}
+        </div>
+        <button class="button driver-skip-turn" type="button" data-skip-driver-turn="${offer.id}">Omitir · pasar al siguiente</button>
+      </div>`
+    : '<div class="driver-dispatch-waiting" role="status"><strong>Esperando tu turno personal</strong><span>La solicitud se ofrece al conductor más cercano. Si le vence el tiempo o la omite, podrá llegarte a ti.</span></div>';
   return `
     <section class="driver-request-sheet" aria-label="Detalle de la solicitud seleccionada">
       <div class="driver-sheet-heading"><div><span class="eyebrow">Solicitud seleccionada</span><h3><span>Gana</span><strong>${formatCop(offer.proposedPriceCop)}</strong></h3><p>${formatPickupProximity(offer.pickupDistanceKilometers)} · ${escapeHtml(getRidePaymentMethodLabel(offer))}</p></div><button class="button button-quiet" type="button" data-close-driver-offer>Cerrar</button></div>
@@ -4592,15 +4753,7 @@ function renderDriverOfferSheet(offer) {
         <div><span class="driver-offer-route-label is-destination">B · Entrega</span><strong>${formatDriverOfferAddress(offer.destinationAddress)}</strong></div>
       </div>
       <div class="driver-offer-classification is-${classification.tone}" aria-label="Clasificación de la oferta">${classification.label}</div>
-      <div class="driver-offer-action-stack">
-        <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}"><span>Enviar oferta por</span><strong>${formatCop(offer.proposedPriceCop)}</strong></button>
-        <div class="driver-counter-sheet" aria-label="Contraofertas rápidas">
-          <label>Propuestas rápidas · máximo ${formatCop(maximumDriverFare)} (hasta +100 % de la tarifa justa)</label>
-          ${counterOfferButtons
-            ? `<div class="driver-counter-options">${counterOfferButtons}</div>`
-            : '<p class="small-text">La tarifa solicitada ya está en el máximo permitido; puedes enviarla tal como está.</p>'}
-        </div>
-      </div>
+      ${dispatchActions}
     </section>`;
 }
 function getDriverRecognition(summary = {}) {
@@ -5238,12 +5391,12 @@ function renderCustomerSearchingPanel(rideRequest) {
         ${renderCustomerRideStepIndicator("search")}
         <span class="eyebrow">Pantalla 3 · despacho</span>
         <h3>Elige tu conductor</h3>
-        <p class="customer-search-lead">Compara precio, cercanía, llegada y calificación. La carrera solo se confirma cuando eliges una propuesta.</p>
+        <p class="customer-search-lead">Cada ronda de búsqueda dura un minuto. Los conductores cercanos reciben su turno por 10 segundos; tú comparas las propuestas y decides a quién asignar el viaje.</p>
         <div class="customer-search-route">
           <div><span class="route-letter route-letter-a">A</span><strong>${escapeHtml(rideRequest.pickupAddress)}</strong></div>
           <div><span class="route-letter route-letter-b">B</span><strong>${escapeHtml(rideRequest.destinationAddress)}</strong></div>
         </div>
-        <div class="customer-offer-progress"><div><span>${offers.length === 1 ? "1 propuesta recibida" : `${offers.length} propuestas recibidas`} · ronda ${board?.searchRound || 1}</span><strong data-customer-offer-countdown>${windowOpen ? "—" : "Reanudando…"}</strong></div><span class="customer-offer-progress-track"><i data-customer-offer-progress></i></span></div>
+        <div class="customer-offer-progress"><div><span>${offers.length === 1 ? "1 propuesta recibida" : `${offers.length} propuestas recibidas`} · búsqueda ${board?.searchRound || 1}</span><strong data-customer-offer-countdown>${windowOpen ? "—" : "Reanudando…"}</strong></div><span class="customer-offer-progress-track"><i data-customer-offer-progress></i></span></div>
         ${offerContent}
         <div class="customer-search-offer"><span>Tu valor inicial</span><strong>${formatCop(rideRequest.proposedPriceCop)}</strong><small>${escapeHtml(getRidePaymentMethodLabel(rideRequest))} · ${escapeHtml(getRideFareModeLabel(rideRequest))}</small></div>
         <div class="customer-search-actions">
@@ -5541,7 +5694,7 @@ async function updateDispatchLocation() {
     };
     await saveDriverLocation(location);
     state.lastDriverLocationSentAt = Date.now();
-    await refreshDriverDispatch();
+    await refreshDriverDispatch({ announceNewOffers: true });
     startDriverLocationTracking({ highAccuracy: hasActiveDriverJourney() });
     renderDashboard();
     showNotice("GPS activado y compartiéndose en vivo. Ordenamos las solicitudes por cercanía.");
@@ -5557,7 +5710,7 @@ function setDispatchRadius(radius) {
   if (![3, 5, 8, 15].includes(normalizedRadius)) return;
   state.dispatchRadiusKilometers = normalizedRadius;
   sessionStorage.setItem(dispatchRadiusKey, String(normalizedRadius));
-  refreshDriverDispatch()
+  refreshDriverDispatch({ announceNewOffers: true })
     .then(() => renderDashboard())
     .catch(error => showNotice(error.message, true));
 }
@@ -5567,6 +5720,22 @@ function dismissDriverOffer(rideRequestId) {
   if (state.selectedDriverOfferId === rideRequestId) state.selectedDriverOfferId = null;
   renderDashboard();
   showNotice("La solicitud quedó oculta por ahora; seguirá disponible para otros conductores.");
+}
+
+async function skipDriverDispatchTurn(rideRequestId) {
+  if (!rideRequestId) return;
+  stopDriverVoiceAcceptance();
+  try {
+    await request(`/driver/ride-requests/${rideRequestId}/skip`, { method: "POST", data: {} });
+    state.selectedDriverOfferId = null;
+    await refreshDriverDispatch({ announceNewOffers: true });
+    renderDashboard();
+    showNotice("Solicitud omitida. El turno pasa al siguiente conductor cercano.");
+  } catch (error) {
+    await refreshDriverDispatch({ announceNewOffers: true }).catch(() => {});
+    renderDashboard();
+    showNotice(error.message, true);
+  }
 }
 
 function selectDriverOffer(rideRequestId) {
@@ -5836,7 +6005,7 @@ function bindDriverEvents() {
   });
   app.querySelectorAll("[data-view-driver-offer]").forEach(row => {
     row.addEventListener("click", event => {
-      if (event.target.closest("[data-dismiss-offer]")) return;
+      if (event.target.closest("[data-dismiss-offer], [data-skip-driver-turn]")) return;
       selectDriverOffer(row.dataset.viewDriverOffer);
     });
     row.addEventListener("keydown", event => {
@@ -5923,7 +6092,7 @@ function bindDriverEvents() {
   const dispatchRefreshButton = app.querySelector("[data-refresh-dispatch]");
   if (dispatchRefreshButton) dispatchRefreshButton.addEventListener("click", async () => {
     try {
-      await refreshDriverDispatch();
+      await refreshDriverDispatch({ announceNewOffers: true });
       renderDashboard();
       showNotice("Solicitudes actualizadas.");
     } catch (error) { showNotice(error.message, true); }
@@ -5933,6 +6102,9 @@ function bindDriverEvents() {
   });
   app.querySelectorAll("[data-dismiss-offer]").forEach(button => {
     button.addEventListener("click", () => dismissDriverOffer(button.dataset.dismissOffer));
+  });
+  app.querySelectorAll("[data-skip-driver-turn]").forEach(button => {
+    button.addEventListener("click", () => skipDriverDispatchTurn(button.dataset.skipDriverTurn));
   });
   const rideLocationStepForm = app.querySelector("#ride-location-step-form");
   if (rideLocationStepForm) rideLocationStepForm.addEventListener("submit", continueRideRequestDetails);
@@ -6699,7 +6871,7 @@ async function changeAvailability(availabilityStatus) {
         showNotice(`No te dejamos LIBRE sin compartir GPS. ${locationError.message}`, true);
         return;
       }
-      await refreshDriverDispatch();
+      await refreshDriverDispatch({ announceNewOffers: true });
     } else {
       stopDriverVoiceAcceptance();
       stopDriverLocationTracking();
@@ -6709,7 +6881,7 @@ async function changeAvailability(availabilityStatus) {
     renderDashboard();
     showNotice(availabilityStatus === "Available"
       ? "Estás LIBRE. GPS en vivo activado; el mapa del cliente se actualizará cuando elija tu oferta."
-      : "Quedaste OCUPADO y no recibirás nuevas solicitudes.");
+      : "Quedaste desconectado y no recibirás nuevas solicitudes.");
   } catch (error) { showNotice(error.message, true); }
 }
 
@@ -6849,6 +7021,7 @@ function signOut(notify = true) {
   window.clearInterval(state.customerOfferCountdownTimer);
   window.clearInterval(state.driverPendingOfferCountdownTimer);
   state.dispatchPollingTimer = null;
+  state.dispatchPollingInProgress = false;
   state.customerTrackingPollingTimer = null;
   state.customerOfferCountdownTimer = null;
   state.driverPendingOfferCountdownTimer = null;
