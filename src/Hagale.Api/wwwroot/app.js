@@ -85,6 +85,10 @@ const state = {
   hiddenDriverOfferIds: new Set(),
   driverOfferSubmissionIds: new Set(),
   driverOfferSubmissionVersion: 0,
+  driverApplicationRequestVersion: 0,
+  driverApplicationAppliedVersion: 0,
+  availabilityMutationVersion: 0,
+  availabilityChangeInProgress: false,
   dispatchPollingTimer: null,
   dispatchPollingInProgress: false,
   driverMap: null,
@@ -1154,9 +1158,46 @@ function getDispatchOffersUrl() {
   return `/driver/ride-requests/available?maximumPickupDistanceKilometers=${encodeURIComponent(state.dispatchRadiusKilometers)}`;
 }
 
+function beginDriverApplicationSnapshot() {
+  return {
+    requestVersion: ++state.driverApplicationRequestVersion,
+    availabilityVersion: state.availabilityMutationVersion
+  };
+}
+
+function applyDriverApplicationSnapshot(application, snapshot, { allowAvailabilityTransition = false } = {}) {
+  const responseIsCurrent = allowAvailabilityTransition
+    ? snapshot?.requestVersion >= state.driverApplicationAppliedVersion
+    : snapshot?.requestVersion === state.driverApplicationRequestVersion;
+  if (!application
+    || !snapshot
+    || !responseIsCurrent
+    || snapshot.availabilityVersion !== state.availabilityMutationVersion
+    || (state.availabilityChangeInProgress && !allowAvailabilityTransition)) {
+    return false;
+  }
+
+  state.application = application;
+  state.driverApplicationAppliedVersion = snapshot.requestVersion;
+  return true;
+}
+
+function beginAvailabilityTransition() {
+  state.availabilityChangeInProgress = true;
+  state.availabilityMutationVersion += 1;
+  return beginDriverApplicationSnapshot();
+}
+
+function finishAvailabilityTransition() {
+  // Invalidates any GET/location response that started during the transition.
+  state.availabilityMutationVersion += 1;
+  state.availabilityChangeInProgress = false;
+}
+
 async function refreshDriverDispatch({ announceNewOffers = false, dispatchOnly = false } = {}) {
   if (!state.profile?.roles.includes("Driver") || state.activeMode !== "Driver") return;
 
+  const refreshAvailabilityVersion = state.availabilityMutationVersion;
   const refreshSubmissionVersion = state.driverOfferSubmissionVersion;
   const previousOffers = state.driverRideOffers || [];
   const previousIds = new Set(previousOffers.map(offer => offer.id));
@@ -1166,10 +1207,15 @@ async function refreshDriverDispatch({ announceNewOffers = false, dispatchOnly =
   const previousCurrentRideId = state.driverCurrentRideRequest?.id || null;
   const previousCurrentRideStatus = state.driverCurrentRideRequest?.status || null;
   const previousPendingOfferId = state.driverPendingRideOffer?.pendingDriverOfferId || null;
+  const applicationSnapshot = dispatchOnly ? null : beginDriverApplicationSnapshot();
   const offersPromise = request(getDispatchOffersUrl());
   if (dispatchOnly) {
     const offers = await offersPromise;
-    if (refreshSubmissionVersion !== state.driverOfferSubmissionVersion) {
+    if (refreshSubmissionVersion !== state.driverOfferSubmissionVersion
+      || refreshAvailabilityVersion !== state.availabilityMutationVersion
+      || state.availabilityChangeInProgress
+      || state.activeMode !== "Driver"
+      || state.application?.availabilityStatus !== "Available") {
       return { offerSetChanged: false, newOfferCount: 0 };
     }
     state.driverRideOffers = offers;
@@ -1204,14 +1250,17 @@ async function refreshDriverDispatch({ announceNewOffers = false, dispatchOnly =
   // A poll may have started before the offer POST reached the server. Ignore
   // its response if a newer submit/result happened while its GETs were in
   // flight, rather than letting a stale empty response restore the inbox.
-  if (refreshSubmissionVersion !== state.driverOfferSubmissionVersion) {
+  if (refreshSubmissionVersion !== state.driverOfferSubmissionVersion
+    || refreshAvailabilityVersion !== state.availabilityMutationVersion
+    || state.availabilityChangeInProgress
+    || state.activeMode !== "Driver") {
     return { offerSetChanged: false, currentRideChanged: false, pendingOfferChanged: false, newOfferCount: 0 };
   }
   state.driverRideOffers = offers;
   state.driverCurrentRideRequest = currentRequest;
   state.driverPendingRideOffer = pendingOffer;
   state.driverCompletedRideRequests = completedRequests;
-  state.application = application;
+  applyDriverApplicationSnapshot(application, applicationSnapshot);
   state.driverActivitySummary = activitySummary;
   void resumeGrantedDriverLocationTracking();
   if (state.selectedDriverOfferId && !offers.some(offer => offer.id === state.selectedDriverOfferId)) {
@@ -3204,11 +3253,13 @@ function applyLocalDriverLocation(location) {
   updateDriverMapPosition(location);
 }
 
-async function saveDriverLocation(location) {
-  state.application = await request("/driver-application/location", {
+async function saveDriverLocation(location, { allowAvailabilityTransition = false } = {}) {
+  const snapshot = beginDriverApplicationSnapshot();
+  const application = await request("/driver-application/location", {
     method: "PATCH",
     data: location
   });
+  applyDriverApplicationSnapshot(application, snapshot, { allowAvailabilityTransition });
 }
 
 function startDriverLocationTracking({ highAccuracy = hasActiveDriverJourney() } = {}) {
@@ -3852,6 +3903,7 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
       sessionStorage.removeItem(modeKey);
     }
 
+    const applicationSnapshot = beginDriverApplicationSnapshot();
     const applicationPromise = request("/driver-application/me")
       .then(application => ({ application, error: null }))
       .catch(error => ({ application: null, error }));
@@ -3865,16 +3917,7 @@ async function loadDashboard({ allowRoleSessionRenewal = true } = {}) {
     if (applicationError && !/Solicitud no encontrada|no tiene una solicitud/i.test(applicationError.message)) {
       throw applicationError;
     }
-    state.application = application;
-    if (state.profile.roles.includes("Driver")
-      && state.activeMode !== "Driver"
-      && state.application?.availabilityStatus === "Available") {
-      state.application = await request("/driver-application/availability", {
-        method: "PATCH",
-        data: { availabilityStatus: "Offline" }
-      });
-      stopDriverLocationTracking();
-    }
+    applyDriverApplicationSnapshot(application, applicationSnapshot);
     state.rideRequests = rideRequests;
     const pendingCustomerRide = state.profile.roles.includes("Customer")
       ? getOpenCustomerRideRequest()
@@ -4115,14 +4158,16 @@ function renderDriverAvailabilitySlider(driver, compact = false) {
   const isBusy = driver?.availabilityStatus === "Busy";
   const waitingForPassenger = Boolean(state.driverPendingRideOffer?.pendingDriverOfferId);
   const visibleOfferCount = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id)).length;
-  const detail = isBusy
+  const detail = state.availabilityChangeInProgress
+    ? "Actualizando disponibilidad y GPS…"
+    : isBusy
     ? "Viaje activo"
     : waitingForPassenger
       ? "Oferta enviada · esperando que el pasajero elija"
     : isAvailable
       ? String(visibleOfferCount) + (visibleOfferCount === 1 ? " solicitud cercana" : " solicitudes cercanas")
       : isApproved ? "No recibes solicitudes" : "Cuenta en revisión";
-  const locked = !isApproved || isBusy || waitingForPassenger;
+  const locked = !isApproved || isBusy || waitingForPassenger || state.availabilityChangeInProgress;
   return '<div class="driver-status-control ' + (compact ? "is-compact" : "") + " " + (isBusy ? "is-journey" : isAvailable ? "is-free" : "is-occupied") + '" data-availability-slider data-availability-locked="' + (locked ? "true" : "false") + '">' +
     '<div class="driver-status-slider" role="group" aria-label="Disponibilidad del conductor">' +
       '<button class="driver-status-option driver-status-occupied ' + (!isAvailable ? "is-active" : "") + '" type="button" data-availability="Offline" ' + (locked ? "disabled" : "") + ' aria-pressed="' + (!isAvailable) + '"><span class="driver-status-dot" aria-hidden="true"></span><strong>' + escapeHtml(appearance.busyStatusLabel) + '</strong><small>No recibir</small></button>' +
@@ -4393,7 +4438,7 @@ function renderDriverDispatchPanel(driver) {
         <button class="button button-secondary small" type="button" data-refresh-dispatch ${isAvailable ? "" : "disabled"}>Actualizar solicitudes</button>
       </div>
       <section class="dispatch-tech-card">
-        <div><strong>Tiempo real</strong><span>SignalR + respaldo cada 20 s</span></div>
+        <div><strong>Tiempo real</strong><span>SignalR + respaldo cada 2 s</span></div>
         <div><strong>Más cerca</strong><span>Orden por GPS directo a recogida</span></div>
         <div><strong>Batería</strong><span>Segundo plano requiere app instalada/PWA</span></div>
       </section>
@@ -4405,7 +4450,11 @@ async function setActiveMode(mode) {
   if (mode === "Driver" && !state.profile?.roles.includes("Driver")) return;
   const nextMode = mode === "Driver" ? "Driver" : "Customer";
   if (nextMode === state.activeMode) return;
-  if (nextMode === "Customer" && hasActiveDriverJourney()) {
+  if (state.availabilityChangeInProgress) {
+    showNotice("Espera a que termine la actualización de disponibilidad y GPS.", true);
+    return;
+  }
+  if (nextMode === "Customer" && (hasActiveDriverJourney() || state.driverPendingRideOffer?.pendingDriverOfferId)) {
     showNotice("Finaliza el viaje activo antes de salir del panel conductor.", true);
     return;
   }
@@ -4414,11 +4463,14 @@ async function setActiveMode(mode) {
     ? state.driverRideOffers?.find(offer => offer.hasPersonalDispatchTurn)
     : null;
   if (nextMode === "Customer" && state.application?.availabilityStatus === "Available") {
+    const availabilitySnapshot = beginAvailabilityTransition();
+    renderDashboard();
     try {
-      state.application = await request("/driver-application/availability", {
+      const application = await request("/driver-application/availability", {
         method: "PATCH",
         data: { availabilityStatus: "Offline" }
       });
+      applyDriverApplicationSnapshot(application, availabilitySnapshot, { allowAvailabilityTransition: true });
       state.activeMode = "Customer";
       sessionStorage.setItem(modeKey, state.activeMode);
       syncDispatchPolling(false, state.application);
@@ -4434,6 +4486,9 @@ async function setActiveMode(mode) {
     } catch (error) {
       showNotice(`No pude desconectarte del despacho: ${error.message}`, true);
       return;
+    } finally {
+      finishAvailabilityTransition();
+      if (state.profile) renderDashboard();
     }
   }
 
@@ -6835,6 +6890,18 @@ async function updateRideJourney(action, rideRequestId) {
 }
 
 async function changeAvailability(availabilityStatus) {
+  if (state.availabilityChangeInProgress) return;
+  if (!state.application || !["Available", "Offline"].includes(availabilityStatus)) return;
+  if (state.application.availabilityStatus === availabilityStatus) return;
+
+  const activePersonalTurn = availabilityStatus === "Offline"
+    ? state.driverRideOffers?.find(offer => offer.hasPersonalDispatchTurn)
+    : null;
+  const availabilitySnapshot = beginAvailabilityTransition();
+  renderDashboard();
+  let actionNotice = null;
+  let actionNoticeIsError = false;
+
   try {
     let location = null;
     if (availabilityStatus === "Available") {
@@ -6851,39 +6918,82 @@ async function changeAvailability(availabilityStatus) {
       }
     }
 
-    state.application = await request("/driver-application/availability", { method: "PATCH", data: { availabilityStatus } });
+    const application = await request("/driver-application/availability", {
+      method: "PATCH",
+      data: { availabilityStatus }
+    });
+    applyDriverApplicationSnapshot(application, availabilitySnapshot, { allowAvailabilityTransition: true });
+
     if (availabilityStatus === "Available" && location) {
       try {
-        await saveDriverLocation(location);
+        await saveDriverLocation(location, { allowAvailabilityTransition: true });
         applyLocalDriverLocation(location);
         state.lastDriverLocationSentAt = Date.now();
         startDriverLocationTracking({ highAccuracy: hasActiveDriverJourney() });
       } catch (locationError) {
         stopDriverLocationTracking();
+        let rollbackConfirmed = false;
         try {
-          state.application = await request("/driver-application/availability", {
+          const rollbackSnapshot = beginDriverApplicationSnapshot();
+          const rolledBackApplication = await request("/driver-application/availability", {
             method: "PATCH",
             data: { availabilityStatus: "Offline" }
           });
+          applyDriverApplicationSnapshot(rolledBackApplication, rollbackSnapshot, { allowAvailabilityTransition: true });
+          rollbackConfirmed = true;
         } catch {
-          state.application = { ...state.application, availabilityStatus: "Offline" };
+          try {
+            const confirmationSnapshot = beginDriverApplicationSnapshot();
+            const confirmedApplication = await request("/driver-application/me");
+            applyDriverApplicationSnapshot(confirmedApplication, confirmationSnapshot, { allowAvailabilityTransition: true });
+          } catch {
+            // Keep the last confirmed server state; do not claim that we
+            // disconnected if the server could not confirm the rollback.
+          }
         }
-        renderDashboard();
-        showNotice(`No te dejamos LIBRE sin compartir GPS. ${locationError.message}`, true);
+        showNotice(rollbackConfirmed
+          ? `No te dejamos LIBRE sin compartir GPS. ${locationError.message}`
+          : `No pude guardar el GPS ni confirmar la desconexión. Revisa el estado antes de recibir viajes. ${locationError.message}`,
+        true);
         return;
       }
-      await refreshDriverDispatch({ announceNewOffers: true });
+      try {
+        await refreshDriverDispatch({ announceNewOffers: true });
+      } catch (dispatchError) {
+        actionNotice = `Estás LIBRE y el GPS está activo, pero no pude actualizar las solicitudes: ${dispatchError.message}`;
+        actionNoticeIsError = true;
+      }
     } else {
       stopDriverVoiceAcceptance();
       stopDriverLocationTracking();
+      if (activePersonalTurn?.id) {
+        await request(`/driver/ride-requests/${activePersonalTurn.id}/skip`, {
+          method: "POST",
+          data: {}
+        }).catch(() => {});
+      }
       state.driverRideOffers = [];
       state.driverCurrentRideRequest = null;
     }
-    renderDashboard();
-    showNotice(availabilityStatus === "Available"
+    actionNotice ??= availabilityStatus === "Available"
       ? "Estás LIBRE. GPS en vivo activado; el mapa del cliente se actualizará cuando elija tu oferta."
-      : "Quedaste desconectado y no recibirás nuevas solicitudes.");
-  } catch (error) { showNotice(error.message, true); }
+      : "Quedaste desconectado y no recibirás nuevas solicitudes.";
+  } catch (error) {
+    try {
+      const confirmationSnapshot = beginDriverApplicationSnapshot();
+      const confirmedApplication = await request("/driver-application/me");
+      applyDriverApplicationSnapshot(confirmedApplication, confirmationSnapshot, { allowAvailabilityTransition: true });
+    } catch {
+      // The last confirmed state stays visible if the connection is unavailable.
+    }
+    actionNotice = `No pude confirmar el cambio de disponibilidad: ${error.message}`;
+    actionNoticeIsError = true;
+  } finally {
+    finishAvailabilityTransition();
+    if (state.profile) renderDashboard();
+  }
+
+  if (actionNotice) showNotice(actionNotice, actionNoticeIsError);
 }
 
 async function startReview(driverProfileId) {
