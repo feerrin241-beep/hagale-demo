@@ -12,6 +12,7 @@ const visualModeKey = "hagale.visual-mode.v2";
 const accountSplashSessionKey = "hagale.account-splash-shown";
 const accountSplashDurationMs = 1200;
 const accountSplashLeaveMs = 950;
+const driverDispatchWindowSeconds = 20;
 const app = document.querySelector("#app");
 const notice = document.querySelector("#notice");
 
@@ -801,8 +802,8 @@ function startDriverVoiceAcceptance(offer) {
     state.driverVoiceRecognitionTimer = window.setTimeout(() => {
       stopDriverVoiceAcceptance();
       void refreshDriverDispatch({ announceNewOffers: true }).catch(() => {});
-    }, Math.min(8_000, remainingMs));
-    showNotice("Di: ENVIAR OFERTA u OMITIR. El turno dura 10 segundos.", false, true);
+    }, Math.min(driverDispatchWindowSeconds * 1_000, remainingMs));
+    showNotice("Di: ENVIAR OFERTA u OMITIR. El turno dura veinte segundos.", false, true);
   } catch {
     stopDriverVoiceAcceptance();
   }
@@ -904,8 +905,8 @@ function notifyDriverNewOffers(newOffers) {
   const offers = (Array.isArray(newOffers) ? newOffers : []).filter(offer => offer.hasPersonalDispatchTurn);
   const newOfferCount = offers.length || Number(newOffers) || 0;
   const message = newOfferCount === 1
-    ? `Nuevo servicio cercano. El pasajero ofrece ${formatCopForVoice(offers[0].proposedPriceCop)}. Tienes diez segundos para enviar esta tarifa, proponer otra u omitir.`
-    : `Tienes ${newOfferCount} turnos personales de servicio. Abre solicitudes para responder en diez segundos.`;
+    ? `Nuevo servicio cercano. El pasajero ofrece ${formatCopForVoice(offers[0].proposedPriceCop)}. Tienes veinte segundos para enviar esta tarifa, proponer otra u omitir.`
+    : `Tienes ${newOfferCount} turnos personales de servicio. Abre solicitudes para responder en veinte segundos.`;
   const now = Date.now();
   if (now - state.lastDriverOfferAlertAt < 3_500) return;
   state.lastDriverOfferAlertAt = now;
@@ -2128,7 +2129,7 @@ function updateDriverDispatchCountdownUi() {
   const progress = app.querySelector("[data-driver-dispatch-progress]");
   const remaining = getOfferSecondsRemaining(activeTurn.personalDispatchExpiresAtUtc);
   if (countdown) countdown.textContent = remaining > 0 ? `${remaining} s para responder` : "Turno terminado";
-  if (progress) progress.style.width = `${Math.max(0, Math.min(100, Math.round((remaining / 10) * 100)))}%`;
+  if (progress) progress.style.width = `${Math.max(0, Math.min(100, Math.round((remaining / driverDispatchWindowSeconds) * 100)))}%`;
   return remaining > 0;
 }
 
@@ -4664,7 +4665,7 @@ function renderDriverRideRequestsPanel() {
   const offers = (state.driverRideOffers || []).filter(offer => !state.hiddenDriverOfferIds.has(offer.id));
   const selectedOffer = offers.find(offer => offer.id === state.selectedDriverOfferId);
   const availabilityNotice = state.application?.availabilityStatus === "Available"
-    ? "La solicitud se ofrece primero al conductor cercano. Si no responde en 10 segundos, pasa al siguiente."
+    ? "La solicitud se ofrece primero al conductor cercano. Si no responde en 20 segundos, pasa al siguiente."
     : "Activa tu disponibilidad desde el panel lateral para comenzar a recibir solicitudes.";
   const offerList = offers.length
     ? offers.map(offer => `
@@ -4675,7 +4676,7 @@ function renderDriverRideRequestsPanel() {
           <small>${escapeHtml(getRidePaymentMethodLabel(offer))}</small>
         </div>
         <div class="driver-request-main">
-          <div class="driver-request-top"><span class="driver-request-distance">${formatPickupProximity(offer.pickupDistanceKilometers)}</span><span class="driver-request-pulse">${offer.hasPersonalDispatchTurn ? "TU TURNO · 10 s" : "Esperando turno"}</span></div>
+          <div class="driver-request-top"><span class="driver-request-distance">${formatPickupProximity(offer.pickupDistanceKilometers)}</span><span class="driver-request-pulse">${offer.hasPersonalDispatchTurn ? "TU TURNO · 20 s" : "Esperando turno"}</span></div>
           <h3>${escapeHtml(offer.pickupAddress)}</h3>
           <p>${escapeHtml(offer.destinationAddress)}</p>
           <div class="driver-request-tags"><span>${escapeHtml(label[offer.serviceType] || offer.serviceType)}</span><span>${escapeHtml(offer.operatingCityCode)}</span>${ridePreferenceTagSpans(offer)}${offer.pickupDistanceKilometers === null || offer.pickupDistanceKilometers === undefined ? '<span>Sin GPS del pasajero</span>' : ""}</div>
@@ -4732,7 +4733,7 @@ function renderDriverOfferSheet(offer) {
       <span>Enviar</span><strong>${formatCop(price)}</strong>
     </button>`).join("");
   const dispatchActions = offer.hasPersonalDispatchTurn
-    ? `<div class="driver-personal-turn" role="timer" aria-live="polite"><strong data-driver-dispatch-countdown>10 s para responder</strong><div class="driver-pending-offer-timer-bar"><i data-driver-dispatch-progress></i></div></div>
+    ? `<div class="driver-personal-turn" role="timer" aria-live="polite"><strong data-driver-dispatch-countdown>20 s para responder</strong><div class="driver-pending-offer-timer-bar"><i data-driver-dispatch-progress></i></div></div>
       <div class="driver-offer-action-stack">
         <button class="button driver-accept-large" type="button" data-accept-ride="${offer.id}"><span>Aceptar tarifa del cliente</span><strong>${formatCop(offer.proposedPriceCop)}</strong></button>
         <p class="small-text driver-offer-accept-note">Aceptar envía tu propuesta; el cliente decide si te asigna el viaje.</p>
@@ -5391,7 +5392,7 @@ function renderCustomerSearchingPanel(rideRequest) {
         ${renderCustomerRideStepIndicator("search")}
         <span class="eyebrow">Pantalla 3 · despacho</span>
         <h3>Elige tu conductor</h3>
-        <p class="customer-search-lead">Cada ronda de búsqueda dura un minuto. Los conductores cercanos reciben su turno por 10 segundos; tú comparas las propuestas y decides a quién asignar el viaje.</p>
+        <p class="customer-search-lead">Cada ronda de búsqueda dura un minuto. Los conductores cercanos reciben su turno por 20 segundos; tú comparas las propuestas y decides a quién asignar el viaje.</p>
         <div class="customer-search-route">
           <div><span class="route-letter route-letter-a">A</span><strong>${escapeHtml(rideRequest.pickupAddress)}</strong></div>
           <div><span class="route-letter route-letter-b">B</span><strong>${escapeHtml(rideRequest.destinationAddress)}</strong></div>

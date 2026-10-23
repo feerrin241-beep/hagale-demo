@@ -9,7 +9,7 @@ public sealed class RideRequest
     /// cercanas. Puede abrir una nueva ronda si no elige ninguna.
     /// </summary>
     public const int OfferCollectionWindowSeconds = 60;
-    public const int PersonalDispatchWindowSeconds = 10;
+    public const int PersonalDispatchWindowSeconds = 20;
 
     private readonly List<RideDriverOffer> _driverOffers = [];
 
@@ -253,7 +253,7 @@ public sealed class RideRequest
     }
 
     /// <summary>
-    /// Reserva el turno personal de diez segundos para un conductor. La fila
+    /// Reserva el turno personal de veinte segundos para un conductor. La fila
     /// provisional solo se vuelve oferta visible al pasajero cuando responde.
     /// </summary>
     public RideDriverOffer StartDispatchTurn(Guid driverProfileId, DateTimeOffset startedAtUtc)
