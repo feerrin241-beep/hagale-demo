@@ -4243,6 +4243,7 @@ function renderDashboard() {
     ? `
       <section class="shell dashboard-shell driver-shell ${hasActiveJourney ? "has-active-journey" : ""} driver-nav-${escapeHtml(state.driverNav || "requests")}">
         ${renderDriverMobileHeader(profile, driver)}
+        ${renderModeSwitchControl(true)}
         <section class="driver-availability-focus" aria-label="Disponibilidad del conductor">${renderDriverAvailabilitySlider(driver)}</section>
         <div class="driver-app-layout">
           <aside class="driver-command-rail">
@@ -4362,7 +4363,6 @@ function renderDriverBottomNav() {
       ${navButton("dispatch", '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="m13 2-8 12h6l-1 8 8-12h-6l1-8Z"/></svg>', "Demanda")}
       ${navButton("performance", '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="m7 15 3-4 3 2 5-7"/></svg>', "Desempeño")}
       ${navButton("wallet", '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6.5h14a2 2 0 0 1 2 2v9H4z"/><path d="M4 6.5v-1h12a2 2 0 0 1 2 2"/><path d="M15 13h5"/></svg>', "Cartera")}
-      <button type="button" class="driver-mode-return" data-set-mode="Customer" aria-label="Volver al panel de cliente"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m12 5-7 7 7 7"/></svg><small>Cliente</small></button>
     </nav>`;
 }
 

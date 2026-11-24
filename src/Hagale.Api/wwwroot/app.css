@@ -8271,3 +8271,410 @@ html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
 }
 .driver-skip-turn:hover,
 .driver-skip-turn:focus-visible { border-color: #d17a7a; color: #7c1e1e; background: #fff0ed; }
+
+/* HÁGALE · concepto actual aplicado a las pantallas operativas */
+:root {
+  --hagale-surface: #111214;
+  --hagale-surface-raised: #191a1d;
+  --hagale-line: #303237;
+  --hagale-muted: #a5a7ad;
+  --hagale-yellow: #ffe600;
+  --hagale-green: #b8ef75;
+  --hagale-green-ink: #142300;
+  --hagale-red: #ed777d;
+  --hagale-red-ink: #2b090b;
+}
+
+html, body, #app { min-height: 100%; }
+body.visual-night.customer-mode,
+body.visual-night.driver-mode { background: #050505 !important; color: #f6f6f2; }
+
+/* El cliente conserva un formato de aplicación centrado; en móvil aprovecha todo el ancho. */
+.customer-panel-shell {
+  width: min(100%, 540px) !important;
+  max-width: 540px !important;
+  min-height: 100dvh;
+  margin-inline: auto !important;
+  padding: max(.65rem, env(safe-area-inset-top)) .8rem calc(1rem + env(safe-area-inset-bottom)) !important;
+  gap: .7rem;
+}
+
+.customer-app-header {
+  position: relative !important;
+  top: auto !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  min-height: 3.6rem !important;
+  margin: 0 !important;
+  padding: .45rem .55rem !important;
+  border: 1px solid var(--hagale-line) !important;
+  border-radius: 1rem !important;
+  background: var(--hagale-surface) !important;
+  box-shadow: none !important;
+}
+
+.customer-app-header .customer-mobile-brand { justify-content: flex-start !important; width: auto !important; }
+.customer-app-header .customer-logo-image { width: clamp(7.2rem, 35vw, 9rem); max-height: 2.25rem; object-fit: contain; }
+.customer-app-actions {
+  display: flex !important;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end !important;
+  gap: .32rem !important;
+  width: auto !important;
+}
+.customer-app-actions .button {
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 2.45rem !important;
+  padding: .4rem .55rem !important;
+  border-radius: .7rem !important;
+  font-size: .72rem !important;
+}
+.customer-app-actions .install-app-button { color: #f6f6f2 !important; background: #202125 !important; border-color: #45464b !important; }
+.customer-app-actions .customer-admin-entry { color: #111 !important; background: var(--hagale-yellow) !important; border-color: var(--hagale-yellow) !important; }
+.customer-app-actions [data-customer-nav="profile"] { color: #f6f6f2 !important; background: #202125 !important; border-color: #45464b !important; }
+.customer-app-actions [data-sign-out] { color: #fff !important; background: #a9434c !important; border-color: #d36b75 !important; }
+
+/* Selector CLIENTE / CONDUCTOR con una pastilla activa que se desliza entre ambos. */
+.mode-switch-app {
+  position: relative !important;
+  isolation: isolate;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: .3rem !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: .32rem !important;
+  overflow: hidden !important;
+  border: 1px solid #37383d !important;
+  border-radius: 1rem !important;
+  background: #151619 !important;
+  box-shadow: none !important;
+}
+.mode-switch-app::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: .32rem;
+  bottom: .32rem;
+  left: .32rem;
+  width: calc(50% - .47rem);
+  border-radius: .75rem;
+  background: var(--hagale-yellow);
+  box-shadow: 0 .25rem .7rem rgba(255,230,0,.18);
+  transition: transform .3s cubic-bezier(.2,.8,.2,1);
+}
+.mode-switch-app.is-driver::before { transform: translateX(calc(100% + .3rem)); }
+.mode-switch-tab {
+  position: relative !important;
+  z-index: 1 !important;
+  display: inline-flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: .45rem !important;
+  min-height: 3.35rem !important;
+  padding: .45rem .3rem !important;
+  border: 0 !important;
+  border-radius: .75rem !important;
+  color: #b9bbc1 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-size: clamp(.96rem, 4vw, 1.16rem) !important;
+  font-weight: 950 !important;
+  letter-spacing: .045em;
+  transition: color .22s ease, transform .22s ease !important;
+}
+.mode-switch-tab-icon { font-size: .68rem !important; }
+.mode-switch-app.is-customer .is-customer-tab,
+.mode-switch-app.is-driver .is-driver-tab { color: #101010 !important; background: transparent !important; transform: none !important; box-shadow: none !important; }
+.mode-switch-tab:hover { background: rgba(255,255,255,.06) !important; transform: none !important; }
+.mode-switch-app.is-customer .is-customer-tab:hover,
+.mode-switch-app.is-driver .is-driver-tab:hover { background: transparent !important; }
+.driver-shell > .mode-switch-app { max-width: 720px !important; margin: .35rem auto 0 !important; }
+
+.customer-panel-shell > .mode-hero-customer { display: none !important; }
+.customer-panel-shell .customer-panel-nav {
+  display: flex !important;
+  gap: .38rem !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: .25rem 0 .5rem !important;
+  overflow-x: auto !important;
+  border: 0 !important;
+  border-bottom: 1px solid #25262a !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  scrollbar-width: none;
+}
+.customer-panel-shell .customer-panel-nav::-webkit-scrollbar { display: none; }
+.customer-panel-shell .customer-panel-tab {
+  flex: 0 0 auto;
+  min-height: 2.35rem !important;
+  padding: .45rem .75rem !important;
+  border: 1px solid #303136 !important;
+  border-radius: 999px !important;
+  color: #c4c5ca !important;
+  background: #111214 !important;
+  text-align: center;
+  box-shadow: none !important;
+}
+.customer-panel-shell .customer-panel-tab span { font-size: .78rem !important; font-weight: 850; }
+.customer-panel-shell .customer-panel-tab small { display: none !important; }
+.customer-panel-shell .customer-panel-tab.is-active { border-color: var(--hagale-yellow) !important; color: #111 !important; background: var(--hagale-yellow) !important; }
+.customer-panel-stage { width: 100% !important; max-width: 100% !important; margin: 0 !important; }
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card {
+  width: 100% !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: .8rem !important;
+  border: 1px solid var(--hagale-line) !important;
+  border-top: 3px solid var(--hagale-yellow) !important;
+  border-radius: 1rem !important;
+  color: #f6f6f2 !important;
+  background: #08090b !important;
+  box-shadow: 0 .8rem 2rem rgba(0,0,0,.25) !important;
+}
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .eyebrow,
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > .muted,
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-request-footer { display: none !important; }
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > h2 { margin: 0 0 .65rem !important; color: #f6f6f2 !important; font-size: 1.15rem !important; }
+.customer-ride-stage { display: grid; gap: .7rem !important; margin: 0 !important; }
+.customer-ride-stage > .panel-back-row { margin: 0 !important; }
+.customer-ride-stage-heading { padding: 0 !important; }
+.customer-ride-stage-heading .eyebrow { display: none; }
+.customer-ride-stage-heading h3 { margin: 0 !important; padding: 0 !important; border: 0 !important; color: #f6f6f2 !important; background: transparent !important; font-size: clamp(1.1rem, 4.3vw, 1.32rem) !important; font-weight: 850 !important; }
+.customer-ride-stage-heading p { margin: .18rem 0 0 !important; color: var(--hagale-muted) !important; font-size: .82rem; }
+.customer-ride-stepper { display: none !important; }
+.customer-ride-form { display: grid !important; gap: .62rem !important; margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+.customer-ride-form > .field,
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field {
+  width: 100% !important;
+  margin: 0 !important;
+  padding: .75rem !important;
+  border: 1px solid #33353a !important;
+  border-radius: .9rem !important;
+  color: #f6f6f2 !important;
+  background: var(--hagale-surface) !important;
+  box-shadow: none !important;
+}
+.customer-ride-form .route-entry label { color: #f6f6f2 !important; font-size: .88rem !important; font-weight: 850 !important; }
+.customer-ride-form .route-entry-a > label:first-child { color: #f6f6f2 !important; }
+.customer-ride-form .route-entry-b > label:first-child { color: var(--hagale-yellow) !important; }
+.customer-ride-form .route-entry-a > label:first-child > span { color: #111 !important; background: #f6f6f2 !important; }
+.customer-ride-form .route-entry-b > label:first-child > span { color: #111 !important; background: var(--hagale-yellow) !important; }
+.customer-panel-stage[data-active-customer-panel="ride"] .route-entry > input:not([type="radio"]),
+.customer-panel-stage[data-active-customer-panel="ride"] .route-entry > select,
+.customer-ride-form input:not([type="radio"]),
+.customer-ride-form select {
+  min-height: 2.9rem !important;
+  padding: .55rem .7rem !important;
+  border: 1px solid #494b51 !important;
+  border-radius: .65rem !important;
+  color: #f6f6f2 !important;
+  background: #08090b !important;
+  box-shadow: none !important;
+}
+.customer-ride-form input::placeholder { color: #92949a !important; }
+.customer-ride-form .sub-field-label { margin-top: .3rem; color: var(--hagale-muted) !important; }
+.customer-ride-form .location-actions { display: grid !important; grid-template-columns: 1fr 1fr; gap: .42rem !important; margin-top: .48rem !important; }
+.customer-ride-form .location-button { min-height: 2.65rem !important; padding: .35rem .5rem !important; border: 1px solid #484a50 !important; border-radius: .65rem !important; color: var(--hagale-yellow) !important; background: #202125 !important; font-size: .78rem !important; }
+.customer-ride-form .route-entry > .small-text { color: #aeb0b7 !important; font-size: .7rem; }
+.customer-ride-form .ride-location-picker { grid-column: 1 / -1; padding: .65rem !important; border: 1px solid #303237 !important; border-radius: .9rem !important; background: #111214 !important; }
+.customer-ride-form .ride-location-map-frame,
+.customer-ride-form .ride-location-map { width: 100% !important; min-height: min(38dvh, 320px) !important; border-radius: .75rem; }
+.ride-auto-route-action { gap: .3rem !important; margin: 0 !important; }
+.ride-auto-route-action small { color: var(--hagale-muted) !important; font-size: .72rem !important; }
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-request-actions { margin: 0 !important; }
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-request-actions .button-primary,
+.customer-panel-stage[data-active-customer-panel="ride"] .customer-submit-request {
+  width: 100% !important;
+  min-height: 3.35rem !important;
+  border: 0 !important;
+  border-radius: .9rem !important;
+  color: #080808 !important;
+  background: var(--hagale-yellow) !important;
+  box-shadow: 0 .3rem 0 #9c8d00 !important;
+  font-size: clamp(1rem, 4.5vw, 1.2rem) !important;
+  font-weight: 950 !important;
+}
+.ride-price-field { padding: .85rem !important; border-color: rgba(255,230,0,.52) !important; }
+.ride-price-field label { color: var(--hagale-muted) !important; font-size: .78rem !important; letter-spacing: .06em; text-transform: uppercase; }
+.ride-price-field input,
+.ride-price-field input#ride-proposed-price { min-height: 3.5rem !important; border: 1px solid #514a12 !important; color: var(--hagale-yellow) !important; background: #08090b !important; font-size: clamp(1.7rem, 7vw, 2.3rem) !important; font-weight: 950 !important; }
+.ride-price-field .small-text { color: var(--hagale-muted) !important; }
+.ride-price-reference { color: #f6f6f2 !important; }
+.customer-route-summary,
+.ride-options-card,
+.customer-search-card,
+.customer-tracking-card,
+.customer-history-card,
+.profile-panel,
+.account-summary,
+.admin-center-card { border-color: #303237 !important; border-radius: 1rem !important; color: #f6f6f2 !important; background: #111214 !important; }
+.customer-route-summary > div:first-child .route-letter-a { color: #111 !important; background: #f6f6f2 !important; }
+.customer-route-summary > div:nth-of-type(3) .route-letter-b { color: #111 !important; background: var(--hagale-yellow) !important; }
+.customer-panel-stage[data-active-customer-panel="ride"] .ride-options-card legend,
+.customer-panel-stage[data-active-customer-panel="ride"] .ride-options-card p { color: #f6f6f2 !important; }
+
+/* Conductor: disponibilidad primero, mapa y bandeja conservan toda su operativa real. */
+.driver-shell { width: min(100%, 1240px) !important; max-width: 1240px !important; margin-inline: auto !important; }
+.driver-mobile-header {
+  border: 1px solid #303237 !important;
+  border-radius: 1rem !important;
+  color: #f6f6f2 !important;
+  background: #111214 !important;
+  box-shadow: 0 .4rem 1.2rem rgba(0,0,0,.24) !important;
+}
+.driver-mobile-brand { color: #f6f6f2 !important; }
+.driver-mobile-mode-title { border-color: #38393e !important; color: var(--hagale-yellow) !important; background: #191a1d !important; }
+.driver-status-control { max-width: 100% !important; }
+.driver-status-slider {
+  min-height: 4.6rem !important;
+  border: 1px solid #383a3e !important;
+  border-radius: 1rem !important;
+  background: #111214 !important;
+  box-shadow: none !important;
+}
+.driver-status-slider::before { top: .3rem !important; bottom: .3rem !important; left: .3rem !important; width: calc(50% - .45rem) !important; border-radius: .75rem !important; background: var(--hagale-red) !important; box-shadow: 0 .25rem .65rem rgba(237,119,125,.16); }
+.driver-status-control.is-free .driver-status-slider::before { left: calc(50% + .15rem) !important; background: var(--hagale-green) !important; box-shadow: 0 .25rem .65rem rgba(184,239,117,.16); }
+.driver-status-control.is-journey .driver-status-slider::before { background: #34363b !important; }
+.driver-status-option { min-height: 3.8rem; justify-items: center !important; padding: .45rem .35rem !important; color: #bfc0c5 !important; text-align: center !important; }
+.driver-status-option strong { grid-column: 1 / -1 !important; color: inherit !important; font-size: clamp(1rem, 3.8vw, 1.28rem) !important; letter-spacing: .08em; }
+.driver-status-option small { display: none !important; }
+.driver-status-option .driver-status-dot { display: none; }
+.driver-status-control.is-occupied .driver-status-occupied.is-active,
+.driver-status-control.is-free .driver-status-free.is-active { color: var(--hagale-green-ink) !important; }
+.driver-status-control.is-journey .driver-status-option { color: #f6f6f2 !important; }
+.driver-availability-focus { max-width: 720px; margin: 0 auto; padding: .65rem 1rem .25rem !important; border: 0 !important; background: transparent !important; }
+.driver-availability-focus .driver-status-slider { min-height: 4.8rem !important; }
+.driver-availability-focus .driver-status-option { min-height: 4.1rem; }
+.driver-status-detail { color: #a5a7ad !important; font-size: .74rem !important; }
+.driver-app-layout { gap: 1rem !important; }
+.driver-workspace { min-width: 0; }
+.driver-workspace > .driver-map-card,
+.driver-workspace > .driver-dispatch-card,
+.driver-workspace > .driver-offers-card,
+.driver-workspace > .driver-active-card,
+.driver-workspace > .driver-settings-card,
+.driver-workspace > .driver-performance-card,
+.driver-workspace > .driver-wallet-card {
+  border: 1px solid #303237 !important;
+  border-radius: 1rem !important;
+  color: #f6f6f2 !important;
+  background: #111214 !important;
+  box-shadow: 0 .55rem 1.5rem rgba(0,0,0,.2) !important;
+}
+.driver-workspace .section-title h2,
+.driver-workspace .section-title h3,
+.driver-workspace .driver-request-main h3 { color: #f6f6f2; }
+.driver-workspace .muted,
+.driver-workspace .small-text { color: #a5a7ad; }
+.driver-request-row { border-color: #303237 !important; background: #191a1d !important; }
+.driver-request-row.has-personal-dispatch-turn { border-left-color: var(--hagale-green) !important; background: #151d13 !important; }
+.driver-request-sheet { border-color: #303237 !important; background: #0b0c0e !important; }
+.driver-request-sheet .driver-request-route,
+.driver-request-sheet .driver-price-reference,
+.driver-pending-offer-card,
+.driver-personal-turn { border-color: #3a3c42 !important; color: #f6f6f2 !important; background: #191a1d !important; }
+.driver-accept-large,
+.driver-workspace .driver-active-actions .button-primary,
+.driver-workspace .driver-stage-action { color: var(--hagale-green-ink) !important; background: var(--hagale-green) !important; }
+.driver-workspace .driver-counter-offer-button,
+.driver-workspace .driver-price-reference-values button { color: #101010 !important; background: var(--hagale-yellow) !important; }
+.driver-bottom-nav {
+  border-color: #303237 !important;
+  background: rgba(17,18,20,.97) !important;
+  box-shadow: 0 -.5rem 1.2rem rgba(0,0,0,.22) !important;
+}
+.driver-bottom-nav button,
+.driver-bottom-nav a { color: #a5a7ad !important; }
+.driver-bottom-nav button.is-selected,
+.driver-bottom-nav button[aria-current="page"],
+.driver-bottom-nav .driver-mode-return { color: var(--hagale-yellow) !important; }
+
+/* Modo día sigue respetando el control de contraste existente. */
+body.visual-day.customer-mode .customer-app-header,
+body.visual-day.customer-mode .customer-panel-shell .customer-panel-tab,
+body.visual-day.customer-mode .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card,
+body.visual-day.customer-mode .customer-ride-form > .field,
+body.visual-day.customer-mode .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field,
+body.visual-day.customer-mode .customer-ride-form input:not([type="radio"]),
+body.visual-day.customer-mode .customer-ride-form select,
+body.visual-day.driver-mode .driver-mobile-header,
+body.visual-day.driver-mode .driver-workspace > * { color: #111218 !important; background: #fff !important; }
+body.visual-day.customer-mode .customer-panel-shell .customer-panel-tab { color: #36373d !important; background: #f2f2ee !important; }
+body.visual-day.customer-mode .customer-panel-shell .customer-panel-tab.is-active { color: #111218 !important; background: var(--hagale-yellow) !important; }
+body.visual-day.customer-mode .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card > h2,
+body.visual-day.customer-mode .customer-ride-stage-heading h3,
+body.visual-day.customer-mode .customer-ride-form .route-entry label,
+body.visual-day.customer-mode .customer-ride-form .ride-options-card legend,
+body.visual-day.customer-mode .customer-ride-form .ride-options-card p { color: #111218 !important; }
+body.visual-day.customer-mode .customer-ride-form .route-entry > input:not([type="radio"]),
+body.visual-day.customer-mode .customer-ride-form input:not([type="radio"]),
+body.visual-day.customer-mode .customer-ride-form select { color: #111218 !important; background: #fff !important; }
+body.visual-day.customer-mode .ride-price-field input#ride-proposed-price { color: #111218 !important; background: #fff4a3 !important; }
+body.visual-day.customer-mode .customer-ride-form .route-entry-a > label:first-child > span,
+body.visual-day.customer-mode .customer-ride-form .route-entry-b > label:first-child > span { color: #111218 !important; }
+body.visual-day.customer-mode .customer-ride-form input:not([type="radio"]),
+body.visual-day.customer-mode .customer-ride-form select { border-color: #111218 !important; }
+body.visual-day.driver-mode .driver-status-slider { background: #f1f1ed !important; }
+body.visual-day.driver-mode .driver-workspace .section-title h2,
+body.visual-day.driver-mode .driver-workspace .section-title h3,
+body.visual-day.driver-mode .driver-workspace .driver-request-main h3,
+body.visual-day.driver-mode .driver-workspace .muted,
+body.visual-day.driver-mode .driver-workspace .small-text { color: #34353a !important; }
+
+@media (max-width: 760px) {
+  .customer-panel-shell { width: 100% !important; max-width: none !important; padding: max(.45rem, env(safe-area-inset-top)) .55rem calc(1rem + env(safe-area-inset-bottom)) !important; }
+  .customer-app-header { min-height: 3.25rem !important; gap: .3rem !important; padding: .35rem !important; }
+  .customer-app-header .customer-logo-image { width: clamp(6.25rem, 31vw, 7.8rem); }
+  .customer-app-actions { gap: .22rem !important; }
+  .customer-app-actions .button { min-height: 2.25rem !important; padding-inline: .42rem !important; font-size: clamp(.59rem, 2.4vw, .7rem) !important; }
+  .customer-panel-shell .customer-panel-nav { margin-inline: -.05rem !important; }
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-request-card { padding: .65rem !important; }
+  .customer-ride-stage { gap: .55rem !important; }
+  .customer-ride-form { gap: .48rem !important; }
+  .customer-ride-form > .field,
+  .customer-panel-stage[data-active-customer-panel="ride"] .customer-ride-form > .field { padding: .6rem !important; }
+  .customer-ride-form .location-button { min-height: 2.45rem !important; }
+  .customer-ride-form .ride-location-map-frame,
+  .customer-ride-form .ride-location-map { min-height: 32dvh !important; }
+  .driver-shell { width: 100% !important; max-width: none !important; padding-bottom: calc(5.3rem + env(safe-area-inset-bottom)) !important; }
+  .driver-mobile-header {
+    top: env(safe-area-inset-top) !important;
+    grid-template-columns: 2.2rem minmax(4.4rem, 1fr) 2.2rem 2.2rem !important;
+    grid-template-areas: "menu brand visual settings" "alert alert alert alert" !important;
+    gap: .45rem !important;
+    min-height: 3.3rem !important;
+    margin: .35rem .5rem 0 !important;
+    padding: .4rem .5rem !important;
+  }
+  .driver-mobile-header .driver-mobile-brand { justify-self: start; }
+  .driver-mobile-header .driver-mobile-brand .driver-mobile-mode-title { min-height: 1.45rem; font-size: .58rem; }
+  .driver-mobile-header .driver-mobile-icon { width: 2.2rem !important; height: 2.2rem !important; }
+  .driver-mobile-header .driver-mobile-alert { grid-area: alert; min-height: 2.25rem !important; margin-top: .05rem; border-radius: .65rem; }
+  .driver-availability-focus { padding: .55rem .65rem .2rem !important; }
+  .driver-availability-focus .driver-status-slider { min-height: 4.15rem !important; }
+  .driver-availability-focus .driver-status-option { min-height: 3.55rem; }
+  .driver-workspace { gap: .65rem !important; }
+  .driver-workspace > .driver-map-card,
+  .driver-workspace > .driver-dispatch-card,
+  .driver-workspace > .driver-offers-card,
+  .driver-workspace > .driver-active-card,
+  .driver-workspace > .driver-settings-card,
+  .driver-workspace > .driver-performance-card,
+  .driver-workspace > .driver-wallet-card { margin-inline: .55rem !important; padding: .8rem !important; border-radius: .9rem !important; }
+  .driver-workspace > .driver-map-card { padding: 0 !important; }
+  .driver-shell > .mode-switch-app { width: calc(100% - 1.3rem) !important; margin: .35rem auto 0 !important; }
+  .driver-bottom-nav { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+}
+
+@media (min-width: 761px) {
+  .customer-panel-shell { width: min(100% - 2rem, 540px) !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-switch-app::before,
+  .mode-switch-tab { transition: none !important; }
+}
