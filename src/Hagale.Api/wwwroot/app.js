@@ -97,6 +97,7 @@ const state = {
   driverNav: "requests",
   selectedDriverOfferId: null,
   driverLocationWatchId: null,
+  driverLocationPreview: null,
   driverLocationUsesHighAccuracy: true,
   lastDriverLocationSentAt: 0,
   isSendingDriverLocation: false,
@@ -1509,10 +1510,10 @@ function renderDriverNavigationAction(rideRequest, place) {
 
 function getDriverMapPoints() {
   const points = [];
-  const driverPosition = toMapCoordinate(
-    state.application?.lastKnownLatitude,
-    state.application?.lastKnownLongitude
-  );
+  const isSharingDriverLocation = ["Available", "Busy"].includes(state.application?.availabilityStatus);
+  const driverPosition = isSharingDriverLocation
+    ? toMapCoordinate(state.application?.lastKnownLatitude, state.application?.lastKnownLongitude)
+    : toMapCoordinate(state.driverLocationPreview?.latitude, state.driverLocationPreview?.longitude);
 
   if (driverPosition) {
     points.push({ ...driverPosition, kind: "driver", title: "Tu moto" });
@@ -1751,21 +1752,25 @@ function addMapRouteBadge(container, text) {
 }
 
 function renderDriverMap(driver) {
-  const isReadyForDispatch = driver?.status === "Approved"
-    && ["Available", "Busy"].includes(driver?.availabilityStatus);
-  const hasDriverPosition = Boolean(toMapCoordinate(driver?.lastKnownLatitude, driver?.lastKnownLongitude));
+  const isApproved = driver?.status === "Approved";
+  const isSharingLocation = ["Available", "Busy"].includes(driver?.availabilityStatus);
+  const hasDriverPosition = Boolean(isSharingLocation
+    ? toMapCoordinate(driver?.lastKnownLatitude, driver?.lastKnownLongitude)
+    : toMapCoordinate(state.driverLocationPreview?.latitude, state.driverLocationPreview?.longitude));
   const hasRidePoint = getDriverMapPoints().some(point => point.kind !== "driver");
   const hasMapPoint = hasDriverPosition || hasRidePoint;
   const status = hasDriverPosition
-    ? state.driverLocationWatchId !== null ? "GPS en vivo" : "Ubicación registrada"
+    ? !isSharingLocation ? "Vista previa GPS" : state.driverLocationWatchId !== null ? "GPS en vivo" : "Ubicación registrada"
     : "GPS pendiente";
-  const help = !isReadyForDispatch
-    ? "Para compartir tu ubicación en el despacho, primero pulsa “Activar disponibilidad”."
-    : hasDriverPosition
+  const help = !isApproved
+    ? "Cuando tu perfil de conductor esté aprobado podrás probar el GPS y conectarte al despacho."
+    : !isSharingLocation
+      ? "Prueba tu GPS aquí sin conectarte ni compartir tu ubicación. Para recibir solicitudes, activa LIBRE."
+      : hasDriverPosition
       ? state.driverCurrentRideRequest
       ? "Tu GPS se comparte durante el servicio. La ruta dibujada es referencial; usa Abrir navegación para calles y giros reales."
       : "Tu GPS se comparte mientras estés LIBRE. La ubicación exacta solo se muestra al cliente del servicio asignado."
-    : "Activa el GPS para ver tu moto y ordenar las solicitudes por cercanía.";
+    : "Activa o actualiza el GPS para ordenar las solicitudes por cercanía.";
 
   return `
     <article class="driver-map-card">
@@ -1780,7 +1785,7 @@ function renderDriverMap(driver) {
       </div>
       <div class="driver-map-footer">
         <p>${help}</p>
-        <button class="button button-secondary small" type="button" data-update-dispatch-location ${isReadyForDispatch ? "" : "disabled"}>${hasDriverPosition ? "Actualizar GPS" : "Activar GPS"}</button>
+        <button class="button button-secondary small" type="button" data-update-dispatch-location ${isApproved ? "" : "disabled"}>${isSharingLocation ? "Actualizar GPS" : "Probar GPS"}</button>
       </div>
       <div class="gps-diagnostic-row driver-gps-diagnostic" aria-live="polite">
         <button class="button button-quiet small" type="button" data-diagnose-gps>Comprobar GPS</button>
@@ -4492,6 +4497,7 @@ async function setActiveMode(mode) {
     }
   }
 
+  if (nextMode === "Customer") state.driverLocationPreview = null;
   state.activeMode = nextMode;
   sessionStorage.setItem(modeKey, state.activeMode);
   if (state.activeMode === "Driver" && !state.driverNav) {
@@ -5633,10 +5639,10 @@ function renderVehicleForm(vehicle = null) {
 
 function getDeviceLocationErrorMessage(error) {
   if (error?.code === 1) {
-    return "No se concedió permiso de ubicación. En el candado de la barra del navegador permite Ubicación para HÁGALE y vuelve a tocar Usar GPS.";
+    return "Falta permiso de ubicación. En Android: Ajustes → Aplicaciones → HÁGALE → Permisos → Ubicación; permite usarla y activa ubicación precisa. Luego vuelve a probar.";
   }
   if (error?.code === 2) {
-    return "El teléfono no puede determinar tu ubicación. Activa Ubicación/GPS y datos o Wi‑Fi, y prueba nuevamente.";
+    return "El teléfono no encontró tu ubicación. Activa Ubicación/GPS y datos o Wi‑Fi; prueba junto a una ventana. En Android revisa también el permiso de ubicación precisa de HÁGALE.";
   }
   if (error?.code === 3) {
     return "El GPS tardó demasiado. Muévete a una zona con mejor señal o elige el punto directamente en el mapa.";
@@ -5666,7 +5672,7 @@ async function readDeviceLocation() {
     });
     return precisePosition.coords;
   } catch (error) {
-    if (error?.code !== 3) throw new Error(getDeviceLocationErrorMessage(error));
+    if (![2, 3].includes(error?.code)) throw new Error(getDeviceLocationErrorMessage(error));
     try {
       const approximatePosition = await getCurrentDevicePosition({
         enableHighAccuracy: false,
@@ -5743,12 +5749,23 @@ async function updateDispatchLocation() {
   const buttons = [...app.querySelectorAll("[data-update-dispatch-location]")];
   buttons.forEach(button => { button.disabled = true; });
   try {
+    if (state.application?.status !== "Approved") {
+      throw new Error("El GPS estará disponible cuando tu perfil de conductor sea aprobado.");
+    }
     const coords = await readDeviceLocation();
     const location = {
       latitude: Number(coords.latitude.toFixed(6)),
       longitude: Number(coords.longitude.toFixed(6))
     };
+    if (!["Available", "Busy"].includes(state.application?.availabilityStatus)) {
+      state.driverLocationPreview = { ...location, updatedAtUtc: new Date().toISOString() };
+      renderDashboard();
+      const accuracy = Number.isFinite(coords.accuracy) ? ` Precisión aproximada: ${Math.round(coords.accuracy)} m.` : "";
+      showNotice(`GPS comprobado. Esta vista previa es privada y no te conecta.${accuracy}`);
+      return;
+    }
     await saveDriverLocation(location);
+    state.driverLocationPreview = null;
     state.lastDriverLocationSentAt = Date.now();
     await refreshDriverDispatch({ announceNewOffers: true });
     startDriverLocationTracking({ highAccuracy: hasActiveDriverJourney() });
@@ -6927,6 +6944,7 @@ async function changeAvailability(availabilityStatus) {
     if (availabilityStatus === "Available" && location) {
       try {
         await saveDriverLocation(location, { allowAvailabilityTransition: true });
+        state.driverLocationPreview = null;
         applyLocalDriverLocation(location);
         state.lastDriverLocationSentAt = Date.now();
         startDriverLocationTracking({ highAccuracy: hasActiveDriverJourney() });
@@ -6966,6 +6984,7 @@ async function changeAvailability(availabilityStatus) {
     } else {
       stopDriverVoiceAcceptance();
       stopDriverLocationTracking();
+      state.driverLocationPreview = null;
       if (activePersonalTurn?.id) {
         await request(`/driver/ride-requests/${activePersonalTurn.id}/skip`, {
           method: "POST",
@@ -7120,6 +7139,7 @@ function signOut(notify = true) {
   if (notify && !window.confirm("¿Estás seguro de que quieres salir?")) return;
   stopDriverVoiceAcceptance();
   stopDriverLocationTracking();
+  state.driverLocationPreview = null;
   destroyDriverMap();
   destroyCustomerTrackingMap();
   window.speechSynthesis?.cancel();

@@ -8678,3 +8678,120 @@ body.visual-day.driver-mode .driver-workspace .small-text { color: #34353a !impo
   .mode-switch-app::before,
   .mode-switch-tab { transition: none !important; }
 }
+
+/* Sistema visual unificado HÁGALE: superficies oscuras, jerarquía breve y acentos funcionales. */
+body.visual-night {
+  --ui-bg: #050506;
+  --ui-surface: #111214;
+  --ui-raised: #191a1d;
+  --ui-line: #303237;
+  --ui-text: #f6f6f2;
+  --ui-muted: #a5a7ad;
+  --ui-accent: #ffe600;
+  --ui-positive: #b8ef75;
+  color: var(--ui-text);
+  background: var(--ui-bg) !important;
+}
+
+body.visual-night #app,
+body.visual-night .welcome-shell,
+body.visual-night .dashboard-shell,
+body.visual-night .customer-panel-shell,
+body.visual-night .driver-shell { color: var(--ui-text); background: var(--ui-bg) !important; }
+
+body.visual-night .welcome-stage {
+  min-height: min(100dvh, 62rem);
+  border: 1px solid #292a2e;
+  border-radius: 1.6rem;
+  background: radial-gradient(ellipse at 50% 74%, rgba(255,230,0,.12), transparent 37%), #050506;
+}
+body.visual-night .welcome-copy h1,
+body.visual-night .welcome-copy p,
+body.visual-night .welcome-auth-card,
+body.visual-night .welcome-auth-card h1,
+body.visual-night .welcome-auth-card h2 { color: var(--ui-text) !important; }
+body.visual-night .welcome-slogan,
+body.visual-night .welcome-copy .welcome-slogan { color: var(--ui-accent) !important; }
+body.visual-night .auth-panel { background: rgba(0,0,0,.78) !important; backdrop-filter: blur(14px); }
+body.visual-night .welcome-auth-card {
+  border: 1px solid #36373b !important;
+  border-radius: 1.35rem !important;
+  background: #111214 !important;
+  box-shadow: 0 1.5rem 4rem rgba(0,0,0,.5) !important;
+}
+body.visual-night .auth-tablist { padding: .25rem; border: 1px solid #303237; border-radius: .9rem; background: #090a0b; }
+body.visual-night .auth-tablist .tab[aria-selected="true"] { color: #111 !important; background: var(--ui-accent) !important; }
+body.visual-night .auth-tablist .tab:not([aria-selected="true"]) { color: #c8c9ce !important; background: transparent !important; }
+
+body.visual-night .dashboard-shell .card,
+body.visual-night .dashboard-shell .customer-panel-stage > article,
+body.visual-night .dashboard-shell .customer-panel-stage > section,
+body.visual-night .driver-command-rail > *,
+body.visual-night .driver-account-content,
+body.visual-night .driver-workspace .driver-command-card,
+body.visual-night .driver-workspace .driver-identity,
+body.visual-night .driver-workspace .driver-alert-card,
+body.visual-night .driver-workspace .driver-visibility-card,
+body.visual-night .driver-workspace .dispatch-tech-card,
+body.visual-night .driver-workspace .driver-dispatch-waiting,
+body.visual-night .dashboard-shell .account-summary,
+body.visual-night .dashboard-shell .admin-center-card,
+body.visual-night .dashboard-shell .profile-panel,
+body.visual-night .dashboard-shell .customer-tracking-card,
+body.visual-night .dashboard-shell .customer-history-card,
+body.visual-night .dashboard-shell .safety-panel,
+body.visual-night .dashboard-shell .ride-chat-card {
+  border-color: var(--ui-line) !important;
+  border-radius: 1rem !important;
+  color: var(--ui-text) !important;
+  background: var(--ui-surface) !important;
+  box-shadow: 0 .5rem 1.35rem rgba(0,0,0,.18) !important;
+}
+
+body.visual-night .dashboard-shell :is(h1,h2,h3,h4,strong,label,legend,.section-title,.account-name,.eyebrow) { color: var(--ui-text); }
+body.visual-night .dashboard-shell :is(.muted,.small-text,.helper-text,.section-title p,.muted p) { color: var(--ui-muted) !important; }
+body.visual-night .dashboard-shell :is(.field input,.field select,.field textarea,input:not([type="radio"]):not([type="checkbox"]),select,textarea,.ride-chat-form input) {
+  border: 1px solid #44464d !important;
+  border-radius: .7rem !important;
+  color: var(--ui-text) !important;
+  background: #090a0c !important;
+  box-shadow: none !important;
+}
+body.visual-night .dashboard-shell :is(input,select,textarea)::placeholder { color: #82848b !important; opacity: 1; }
+body.visual-night .dashboard-shell :is(input,select,textarea):focus-visible { border-color: var(--ui-accent) !important; outline: 2px solid rgba(255,230,0,.18); outline-offset: 1px; }
+body.visual-night .dashboard-shell :is(.customer-ride-form input#ride-proposed-price,.ride-price-field input#ride-proposed-price) { color: #111 !important; background: #ffe600 !important; }
+
+body.visual-night .dashboard-shell :is(.customer-route-summary,.ride-options-card,.customer-search-card,.customer-tracking-card,.customer-history-card,.profile-panel,.account-summary,.admin-center-card,.customer-request-card,.driver-map-card,.driver-dispatch-card,.driver-offers-card,.driver-active-card,.driver-settings-card,.driver-performance-card,.driver-wallet-card) {
+  border-color: var(--ui-line) !important;
+  color: var(--ui-text) !important;
+  background: var(--ui-surface) !important;
+}
+body.visual-night .dashboard-shell :is(.driver-request-row,.driver-request-sheet,.driver-pending-offer-card,.driver-personal-turn,.customer-history-item,.ride-chat-messages,.wallet-balance-card,.wallet-topup-card,.wallet-empty,.performance-metric,.customer-tracking-route,.customer-trip-glance,.customer-stage-alert,.driver-stage-alert,.dispatch-tech-card > div) {
+  border-color: #34363b !important;
+  color: var(--ui-text) !important;
+  background: var(--ui-raised) !important;
+}
+body.visual-night .dashboard-shell :is(.driver-request-route,.driver-price-reference,.driver-request-sheet .driver-request-route,.driver-request-sheet .driver-price-reference) { color: var(--ui-text) !important; background: #202125 !important; }
+body.visual-night .dashboard-shell :is(.driver-map-footer,.driver-gps-diagnostic,.dispatch-location-row,.dispatch-filter-row,.dispatch-tech-card,.customer-panel-nav,.customer-history-section,.driver-quick-actions) { border-color: var(--ui-line) !important; }
+body.visual-night .dashboard-shell :is(.driver-bottom-nav,.customer-app-header,.driver-mobile-header) { border-color: #33353a !important; background: rgba(17,18,20,.97) !important; }
+body.visual-night .dashboard-shell :is(.ride-chat-message.is-mine,.customer-history-primary-action .button) { color: #111 !important; background: var(--ui-accent) !important; }
+body.visual-night .dashboard-shell :is(.ride-chat-message.is-other,.ride-chat-empty) { color: var(--ui-text) !important; background: #1b1c20 !important; }
+body.visual-night .dashboard-shell :is(.button-primary,.customer-request-actions .button-primary,.location-button) { color: #111 !important; background: var(--ui-accent) !important; border-color: var(--ui-accent) !important; }
+body.visual-night .dashboard-shell :is(.driver-accept-large,.driver-active-actions .button-primary,.driver-stage-action,.driver-online-button) { color: #142300 !important; background: var(--ui-positive) !important; border-color: #8cc954 !important; }
+body.visual-night .dashboard-shell :is(.button-danger,[data-sign-out],.safety-assist-button) { color: #fff !important; background: #a9434c !important; border-color: #d36b75 !important; }
+body.visual-night .driver-map-card .driver-map-footer { display: grid !important; grid-template-columns: minmax(0,1fr) !important; justify-items: center !important; gap: .55rem !important; padding: .7rem .9rem .25rem !important; }
+body.visual-night .driver-map-card .driver-map-footer > p { width: 100%; margin: 0; }
+body.visual-night .driver-map-card .driver-map-footer > [data-update-dispatch-location] { justify-self: center !important; min-width: 11rem; }
+body.visual-night .driver-map-card .driver-gps-diagnostic { grid-column: 1; justify-self: center !important; display: grid !important; justify-items: center !important; gap: .35rem !important; width: 100%; text-align: center; }
+body.visual-night .driver-map-card .driver-gps-diagnostic [data-gps-diagnostic-status] { color: var(--ui-muted) !important; text-align: center !important; }
+body.visual-night .driver-map-card .map-privacy-note { margin: .2rem .9rem .85rem; color: var(--ui-muted) !important; }
+
+body.visual-day .welcome-shell,
+body.visual-day .dashboard-shell { color: #17181c; }
+body.visual-day .dashboard-shell :is(input,select,textarea) { color: #17181c !important; background: #fff !important; }
+
+@media (max-width: 760px) {
+  body.visual-night .welcome-stage { min-height: 100dvh; width: 100%; border: 0; border-radius: 0; }
+  body.visual-night .welcome-auth-card { width: min(100% - 1rem, 31rem); margin-inline: auto; }
+  body.visual-night .driver-map-card .driver-map-footer { padding-inline: .8rem !important; }
+}
